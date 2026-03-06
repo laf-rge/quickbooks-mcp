@@ -1,6 +1,6 @@
 // File utilities for report output
 
-import { writeFileSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import tmp from "tmp";
 
@@ -12,8 +12,16 @@ let reportsDir: string | null = null;
 
 function getReportsDir(): string {
   if (!reportsDir) {
-    const tmpDir = tmp.dirSync({ prefix: "qb-reports-", unsafeCleanup: true });
-    reportsDir = tmpDir.name;
+    const envDir = process.env.QBO_REPORTS_DIR;
+    if (envDir) {
+      if (!existsSync(envDir)) {
+        mkdirSync(envDir, { recursive: true });
+      }
+      reportsDir = envDir;
+    } else {
+      const tmpDir = tmp.dirSync({ prefix: "qb-reports-", unsafeCleanup: true });
+      reportsDir = tmpDir.name;
+    }
   }
   return reportsDir;
 }

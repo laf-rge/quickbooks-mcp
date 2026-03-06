@@ -246,6 +246,7 @@ The server needs these AWS permissions:
 | `QBO_CLIENT_SECRET` | - | QuickBooks app Client Secret (local mode) |
 | `QBO_CREDENTIAL_FILE` | `~/.quickbooks-mcp/credentials.json` | Custom credential file path |
 | `QBO_SANDBOX` | `false` | Use QuickBooks sandbox environment |
+| `QBO_REPORTS_DIR` | System temp dir | Stable directory for report JSON files (useful for sandboxed environments) |
 | `AWS_REGION` | `us-east-2` | AWS region (aws mode) |
 | `QBO_SECRET_NAME` | `prod/qbo` | Secrets Manager secret name (aws mode) |
 | `QBO_COMPANY_ID_PARAM` | `/prod/qbo/company_id` | SSM parameter path (aws mode) |
