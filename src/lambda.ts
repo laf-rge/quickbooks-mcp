@@ -307,6 +307,12 @@ function unauthorized(event: APIGatewayEvent, description: string): APIGatewayRe
 // ---------------------------------------------------------------------------
 
 export async function handler(event: APIGatewayEvent): Promise<APIGatewayResult> {
+  // Short-circuit scheduled warmer pings (e.g. EventBridge rule with payload
+  // {"warmer": true}) so they don't exercise auth or QB API code paths.
+  if ((event as unknown as { warmer?: boolean }).warmer === true) {
+    return { statusCode: 200, headers: {}, body: "warmer", isBase64Encoded: false };
+  }
+
   const { method, path } = getMethodAndPath(event);
 
   // CORS preflight for any path
