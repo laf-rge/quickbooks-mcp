@@ -45,7 +45,10 @@ export async function handleCreateJournalEntry(
     doc_number?: string;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { txn_date, memo, lines, draft = true, doc_number } = args;
+  const { txn_date, memo, lines: rawLines, draft = true, doc_number } = args;
+
+  // Defensive: MCP transports may deliver arrays as JSON strings
+  const lines: JournalEntryLine[] = typeof rawLines === "string" ? JSON.parse(rawLines) : rawLines;
 
   // Get cached accounts and departments (uses TTL-based cache)
   const [acctCache, deptCache] = await Promise.all([
@@ -294,7 +297,11 @@ export async function handleEditJournalEntry(
     draft?: boolean;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { id, txn_date, memo, doc_number, lines: lineChanges, draft = true } = args;
+  const { id, txn_date, memo, doc_number, lines: rawLineChanges, draft = true } = args;
+
+  // Defensive: MCP transports may deliver arrays as JSON strings
+  const lineChanges: JournalEntryLineChange[] | undefined =
+    typeof rawLineChanges === "string" ? JSON.parse(rawLineChanges) : rawLineChanges;
 
   // Fetch current JE
   const current = await promisify<unknown>((cb) =>
