@@ -4,6 +4,15 @@
 
 This is a Model Context Protocol (MCP) server that provides Claude with access to QuickBooks Online. It enables Claude to query, create, and edit accounting data including journal entries, bills, expenses, and reports.
 
+## Git Workflow
+
+This repo uses a branch-and-PR workflow — **never commit directly to `master`**. All changes land via pull request.
+
+- **"commit and push"** means: branch off the latest `master`, commit, push, and open a PR to `master` with `gh pr create`. Then stop — PRs wait for review; do not auto-merge.
+- Start from an up-to-date master: `git fetch origin && git switch -c <branch> origin/master`.
+- **Branch naming**: `type/short-desc` — `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`. E.g. `fix/scraper-popup`, `chore/bump-deps`.
+- Give the PR a descriptive title and a body summarizing what changed and why.
+
 ## Architecture
 
 ```
