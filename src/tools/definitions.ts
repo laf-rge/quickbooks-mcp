@@ -1345,14 +1345,102 @@ export const toolDefinitions = [
     },
   },
   {
+    name: "create_bill_payment",
+    description: "Create a bill payment (the QBO 'check' / 'pay bills' flow). Pays one or more existing bills and optionally applies vendor credits, clearing Accounts Payable. Use this to record vendor ACH/EFT debits or checks so the bank feed can match them — especially when a bank charge equals bills minus credit memos. Amounts default to each bill's open balance and each credit's remaining balance. Returns payment details and a link to view in QuickBooks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        vendor_name: {
+          type: "string",
+          description: "Vendor display name (e.g., 'US Foods'). Will be looked up to get ID.",
+        },
+        vendor_id: {
+          type: "string",
+          description: "Vendor ID (use if you already know it, otherwise use vendor_name)",
+        },
+        payment_account: {
+          type: "string",
+          description: "Bank account name or number the payment is drawn from (e.g., 'PLAT BUS CHECKING', '5752'). Will be looked up to get ID.",
+        },
+        txn_date: {
+          type: "string",
+          description: "Payment date in YYYY-MM-DD format (use the bank debit date for bank-feed matching)",
+        },
+        memo: {
+          type: "string",
+          description: "Private memo for the payment",
+        },
+        doc_number: {
+          type: "string",
+          description: "Reference number, e.g., check number or EFT reference (optional)",
+        },
+        bills: {
+          type: "array",
+          description: "Bills to pay. Each bill must belong to the vendor and have an open balance.",
+          items: {
+            type: "object",
+            properties: {
+              bill_id: {
+                type: "string",
+                description: "Bill ID to pay",
+              },
+              amount: {
+                type: "number",
+                description: "Amount to apply (optional, defaults to the bill's full open balance)",
+              },
+            },
+            required: ["bill_id"],
+          },
+        },
+        credits: {
+          type: "array",
+          description: "Vendor credits to apply against the bills (optional). Each credit must belong to the vendor and have remaining balance.",
+          items: {
+            type: "object",
+            properties: {
+              vendor_credit_id: {
+                type: "string",
+                description: "Vendor credit ID to apply",
+              },
+              amount: {
+                type: "number",
+                description: "Amount of credit to apply (optional, defaults to the credit's full remaining balance)",
+              },
+            },
+            required: ["vendor_credit_id"],
+          },
+        },
+        draft: {
+          type: "boolean",
+          description: "If true, validate and show preview without creating (default: true)",
+        },
+      },
+      required: ["payment_account", "txn_date", "bills"],
+    },
+  },
+  {
+    name: "get_bill_payment",
+    description: "Fetch a single bill payment by ID with full details including SyncToken. Shows vendor, date, pay type, bank account, linked bills/credits with applied amounts, and flags any unapplied amount (payment total not matching net applied lines).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "The bill payment ID",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "delete_entity",
-    description: "Permanently delete a QuickBooks transaction. Supports journal entries, bills, invoices, deposits, sales receipts, expenses, and vendor credits. Uses a two-step flow: first call previews what will be deleted, second call with confirm=true executes the deletion. Note: Customers cannot be deleted — use edit_customer with active=false to deactivate instead.",
+    description: "Permanently delete a QuickBooks transaction. Supports journal entries, bills, invoices, deposits, sales receipts, expenses, vendor credits, and bill payments. Uses a two-step flow: first call previews what will be deleted, second call with confirm=true executes the deletion. Note: Customers cannot be deleted — use edit_customer with active=false to deactivate instead.",
     inputSchema: {
       type: "object",
       properties: {
         entity_type: {
           type: "string",
-          enum: ["journal_entry", "bill", "invoice", "deposit", "sales_receipt", "expense", "vendor_credit"],
+          enum: ["journal_entry", "bill", "invoice", "deposit", "sales_receipt", "expense", "vendor_credit", "bill_payment"],
           description: "The type of entity to delete.",
         },
         id: {
