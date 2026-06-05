@@ -93,6 +93,7 @@ declare module "node-quickbooks" {
     deleteSalesReceipt(idOrEntity: object | string, callback: Callback<unknown>): void;
     deletePurchase(idOrEntity: object | string, callback: Callback<unknown>): void;
     deleteVendorCredit(idOrEntity: object | string, callback: Callback<unknown>): void;
+    deleteBillPayment(idOrEntity: object | string, callback: Callback<unknown>): void;
 
     // Reports
     reportBalanceSheet(options: object, callback: Callback<unknown>): void;

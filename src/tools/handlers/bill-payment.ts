@@ -11,7 +11,7 @@ import {
   getAccountCache,
   getVendorCache,
 } from "../../client/index.js";
-import { validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { validateAmount, toCents, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
 interface BillPaymentBillInput {
   bill_id: string;
@@ -94,7 +94,7 @@ export async function handleCreateBillPayment(
       a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase())
     );
     if (match) return { id: match.Id, name: match.FullyQualifiedName || match.Name };
-    throw new Error(`Account not found: "${payment_account}"`);
+    throw new Error(`Account not found: "${name}"`);
   };
 
   const bankAcct = lookupAccount(payment_account);
@@ -110,7 +110,8 @@ export async function handleCreateBillPayment(
           `Bill ${b.bill_id} (#${bill.DocNumber || "?"}) belongs to vendor "${bill.VendorRef?.name || bill.VendorRef?.value}", not "${vendorRef.name}"`
         );
       }
-      const openCents = validateAmount(bill.Balance ?? 0, `Bill ${b.bill_id} balance`);
+      // API-sourced value: round to cents (validateAmount is for user input)
+      const openCents = toCents(bill.Balance ?? 0);
       let applyCents: number;
       if (b.amount !== undefined) {
         applyCents = validateAmount(b.amount, `Bill ${b.bill_id} amount`);
@@ -141,8 +142,9 @@ export async function handleCreateBillPayment(
           `Vendor credit ${c.vendor_credit_id} (#${vc.DocNumber || "?"}) belongs to vendor "${vc.VendorRef?.name || vc.VendorRef?.value}", not "${vendorRef.name}"`
         );
       }
-      // VendorCredit.Balance is the unapplied remainder; fall back to TotalAmt
-      const availCents = validateAmount(vc.Balance ?? vc.TotalAmt ?? 0, `Vendor credit ${c.vendor_credit_id} balance`);
+      // VendorCredit.Balance is the unapplied remainder; fall back to TotalAmt.
+      // API-sourced value: round to cents (validateAmount is for user input).
+      const availCents = toCents(vc.Balance ?? vc.TotalAmt ?? 0);
       let applyCents: number;
       if (c.amount !== undefined) {
         applyCents = validateAmount(c.amount, `Vendor credit ${c.vendor_credit_id} amount`);
@@ -283,10 +285,16 @@ export async function handleGetBillPayment(
 
   const payAcct = bp.CheckPayment?.BankAccountRef || bp.CreditCardPayment?.CCAccountRef;
 
-  // Sum applied amounts to surface any unapplied remainder — a common
-  // source of bills that stay open after a payment was matched.
-  const appliedCents = sumCents((bp.Line || []).map(l => Math.round(l.Amount * 100)));
-  const totalCents = Math.round((bp.TotalAmt || 0) * 100);
+  // Net applied = bill applications minus vendor-credit applications.
+  // QBO stores credit lines with positive amounts but TotalAmt is the net
+  // check amount (bills − credits), so credits must be signed negative here.
+  // Surfaces any unapplied remainder — a common source of bills that stay
+  // open after a payment was matched.
+  const appliedCents = sumCents((bp.Line || []).map(l => {
+    const isCredit = l.LinkedTxn?.some(t => t.TxnType === "VendorCredit");
+    return isCredit ? -toCents(l.Amount) : toCents(l.Amount);
+  }));
+  const totalCents = toCents(bp.TotalAmt || 0);
   const unappliedCents = totalCents - appliedCents;
 
   const lines: string[] = [
@@ -307,13 +315,16 @@ export async function handleGetBillPayment(
 
   for (const line of bp.Line || []) {
     for (const txn of line.LinkedTxn || []) {
-      lines.push(`  ${txn.TxnType} ${txn.TxnId}: $${line.Amount.toFixed(2)}`);
+      const sign = txn.TxnType === "VendorCredit" ? "-" : "";
+      lines.push(`  ${txn.TxnType} ${txn.TxnId}: ${sign}$${line.Amount.toFixed(2)}`);
     }
   }
 
   if (unappliedCents !== 0) {
     lines.push('');
-    lines.push(`*** UNAPPLIED AMOUNT: $${formatDollars(unappliedCents)} — payment total exceeds applied lines`);
+    lines.push(unappliedCents > 0
+      ? `*** UNAPPLIED AMOUNT: $${formatDollars(unappliedCents)} — payment total exceeds applied lines`
+      : `*** OVER-APPLIED: applied lines exceed payment total by $${formatDollars(-unappliedCents)}`);
   }
 
   lines.push('');
