@@ -332,6 +332,9 @@ QBO_INLINE_OUTPUT=true
 | `create_vendor_credit` | Create a vendor credit |
 | `get_vendor_credit` | Fetch a vendor credit by ID |
 | `edit_vendor_credit` | Modify an existing vendor credit |
+| **Bill Payments** | |
+| `create_billpayment` | Pay bills and apply vendor credits (the QBO "check" / pay-bills flow) |
+| `get_billpayment` | Fetch a bill payment by ID; flags unapplied amounts |
 | **Delete** | |
 | `delete_entity` | Delete any transaction (journal entry, bill, invoice, deposit, sales receipt, expense, vendor credit) |
 
