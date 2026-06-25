@@ -23,6 +23,19 @@ export interface DepartmentCache {
   fetchedAt: number;
 }
 
+export interface CachedClass {
+  Id: string;
+  Name: string;
+  FullyQualifiedName?: string;
+}
+
+export interface ClassCache {
+  items: CachedClass[];
+  byId: Map<string, CachedClass>;
+  byName: Map<string, CachedClass>;       // lowercase key (Name and FullyQualifiedName)
+  fetchedAt: number;
+}
+
 export interface AccountCache {
   items: CachedAccount[];
   byId: Map<string, CachedAccount>;

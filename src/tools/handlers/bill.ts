@@ -4,6 +4,7 @@ import QuickBooks from "node-quickbooks";
 import {
   promisify,
   getAccountCache,
+  getClassCache,
   getDepartmentCache,
   getVendorCache,
   resolveVendor,
@@ -15,6 +16,8 @@ interface CreateBillLine {
   account_name?: string;
   amount: number;
   description?: string;
+  class_id?: string;
+  class_name?: string;
 }
 
 interface BillLineChange {
@@ -22,6 +25,8 @@ interface BillLineChange {
   account_name?: string;
   amount?: number;
   description?: string;
+  class_id?: string;
+  class_name?: string;
   delete?: boolean;
 }
 
@@ -52,11 +57,25 @@ export async function handleCreateBill(
   }
 
   // Get cached lookups
-  const [acctCache, deptCache, vendorCacheData] = await Promise.all([
+  const [acctCache, deptCache, vendorCacheData, classCacheData] = await Promise.all([
     getAccountCache(client),
     getDepartmentCache(client),
     getVendorCache(client),
+    getClassCache(client),
   ]);
+
+  // Resolve a class (location/Class tracking) by id or name to a QBO ClassRef.
+  const resolveClassRef = (nameOrId: string): { value: string; name: string } => {
+    const byId = classCacheData.byId.get(nameOrId);
+    if (byId) return { value: byId.Id, name: byId.FullyQualifiedName || byId.Name };
+    const byName = classCacheData.byName.get(nameOrId.toLowerCase());
+    if (byName) return { value: byName.Id, name: byName.FullyQualifiedName || byName.Name };
+    const byPartial = classCacheData.items.find(c =>
+      (c.FullyQualifiedName || c.Name).toLowerCase().includes(nameOrId.toLowerCase())
+    );
+    if (byPartial) return { value: byPartial.Id, name: byPartial.FullyQualifiedName || byPartial.Name };
+    throw new Error(`Class not found: "${nameOrId}"`);
+  };
 
   // Resolve vendor
   const resolveVendorRef = (nameOrId: string): { value: string; name: string } => {
@@ -164,18 +183,23 @@ export async function handleCreateBill(
     ...(doc_number && { DocNumber: doc_number }),
     ...(departmentRef && { DepartmentRef: departmentRef }),
     ...(apAccountRef && { APAccountRef: apAccountRef }),
-    Line: resolvedLines.map((line) => ({
-      Amount: line.amount,
-      DetailType: "AccountBasedExpenseLineDetail",
-      ...(line.description && { Description: line.description }),
-      AccountBasedExpenseLineDetail: {
-        AccountRef: {
-          value: line.account_id,
-          name: line.account_name,
+    Line: resolvedLines.map((line) => {
+      const classInput = line.class_id || line.class_name;
+      const classRef = classInput ? resolveClassRef(classInput) : undefined;
+      return {
+        Amount: line.amount,
+        DetailType: "AccountBasedExpenseLineDetail",
+        ...(line.description && { Description: line.description }),
+        AccountBasedExpenseLineDetail: {
+          AccountRef: {
+            value: line.account_id,
+            name: line.account_name,
+          },
+          BillableStatus: "NotBillable",
+          ...(classRef && { ClassRef: classRef }),
         },
-        BillableStatus: "NotBillable",
-      },
-    })),
+      };
+    }),
   };
 
   if (draft) {
@@ -404,7 +428,10 @@ export async function handleEditBill(
   let finalLines = [...((updated.Line as typeof current.Line) || current.Line)];
 
   if (lineChanges && lineChanges.length > 0) {
-    const acctCache = await getAccountCache(client);
+    const [acctCache, classCacheData] = await Promise.all([
+      getAccountCache(client),
+      getClassCache(client),
+    ]);
 
     const resolveAcct = (name: string) => {
       let match = acctCache.byAcctNum.get(name.toLowerCase());
@@ -414,6 +441,18 @@ export async function handleEditBill(
       );
       if (!match) throw new Error(`Account not found: "${name}"`);
       return { value: match.Id, name: match.FullyQualifiedName || match.Name };
+    };
+
+    const resolveClassRef = (nameOrId: string) => {
+      const byId = classCacheData.byId.get(nameOrId);
+      if (byId) return { value: byId.Id, name: byId.FullyQualifiedName || byId.Name };
+      const byName = classCacheData.byName.get(nameOrId.toLowerCase());
+      if (byName) return { value: byName.Id, name: byName.FullyQualifiedName || byName.Name };
+      const byPartial = classCacheData.items.find(c =>
+        (c.FullyQualifiedName || c.Name).toLowerCase().includes(nameOrId.toLowerCase())
+      );
+      if (byPartial) return { value: byPartial.Id, name: byPartial.FullyQualifiedName || byPartial.Name };
+      throw new Error(`Class not found: "${nameOrId}"`);
     };
 
     for (const change of lineChanges) {
@@ -430,6 +469,7 @@ export async function handleEditBill(
           const detail = { ...(line.AccountBasedExpenseLineDetail || {}) } as {
             AccountRef: { value: string; name?: string };
             DepartmentRef?: { value: string; name?: string };
+            ClassRef?: { value: string; name?: string };
           };
 
           if (change.amount !== undefined) {
@@ -438,6 +478,8 @@ export async function handleEditBill(
           }
           if (change.description !== undefined) line.Description = change.description;
           if (change.account_name !== undefined) detail.AccountRef = resolveAcct(change.account_name);
+          const classInput = change.class_id ?? change.class_name;
+          if (classInput !== undefined) detail.ClassRef = resolveClassRef(classInput);
 
           line.AccountBasedExpenseLineDetail = detail;
           line.DetailType = 'AccountBasedExpenseLineDetail';
@@ -452,12 +494,14 @@ export async function handleEditBill(
         const amountCents = validateAmount(change.amount, `New line for ${change.account_name}`);
 
         // Id omitted for new lines - QB will assign
+        const newClassInput = change.class_id ?? change.class_name;
         const newLine = {
           Amount: toDollars(amountCents),
           Description: change.description,
           DetailType: 'AccountBasedExpenseLineDetail',
           AccountBasedExpenseLineDetail: {
             AccountRef: resolveAcct(change.account_name),
+            ...(newClassInput !== undefined && { ClassRef: resolveClassRef(newClassInput) }),
           }
         } as typeof finalLines[0];
         finalLines.push(newLine);
