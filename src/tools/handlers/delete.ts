@@ -161,7 +161,7 @@ export async function handleDeleteEntity(
 
   // Execute delete
   await promisify<unknown>((cb) =>
-    (client as any)[config.deleteMethod]({ Id: id }, cb)
+    (client as any)[config.deleteMethod](id, cb)
   );
 
   return {
