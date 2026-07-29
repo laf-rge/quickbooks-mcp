@@ -94,6 +94,7 @@ For tools that return large datasets, cap the detail for HTTP mode using `isHttp
 | Change query behavior | `src/query/pagination.ts` |
 | Money utilities | `src/utils/money.ts` |
 | API client | `src/client/quickbooks.ts` |
+| Entities node-quickbooks doesn't wrap | `src/client/rest.ts` |
 | Output mode (stdio/http) | `src/utils/output.ts` |
 
 ## Critical Limitations
@@ -128,4 +129,7 @@ Both builds must pass before committing. After changes, restart Claude Code to r
   - Bill: `VendorRef`
   - Purchase (Expense): `PaymentType`
 - Department/Location filtering must be done client-side (not in QB queries)
+- node-quickbooks only wraps ~35 entities; use `src/client/rest.ts` for the rest
+- Some postings have no account reference in the payload (A/R, sales tax) and are
+  invisible to entity-based reads — see `docs/entity-coverage.md`
 - See `docs/quickbooks-api-limitations.md` for details

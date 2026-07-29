@@ -1,10 +1,11 @@
 // Handler for query tool
 
 import QuickBooks from "node-quickbooks";
-import { getQboUrl, outputReport } from "../../utils/index.js";
+import { getQboUrl, hasQboUrl, outputReport } from "../../utils/index.js";
 import {
   parsePaginationFromQuery,
   paginatedQuery,
+  fetcherForEntity,
   SAFETY_LIMIT,
   WARNING_THRESHOLD,
   buildQueryErrorMessage,
@@ -39,14 +40,17 @@ export async function handleQuery(
   const plural = pluralMap[entity] || `${entity}s`;
   const finderMethod = `find${plural}` as keyof QuickBooks;
 
-  if (typeof client[finderMethod] !== 'function') {
-    throw new Error(`Unknown entity type: ${entity}. Try: Customer, Vendor, Invoice, Bill, Account, Item, Department, JournalEntry, Purchase, Payment, SalesReceipt, Deposit`);
-  }
+  // node-quickbooks only wraps ~35 entities. For the rest (CreditCardPayment,
+  // TaxPayment, InventoryAdjustment, RecurringTransaction, ReimburseCharge,
+  // TaxClassification) fall back to the raw REST query endpoint, which accepts
+  // any queryable entity. An unknown entity name now surfaces QB's own
+  // "not found for Entity" fault rather than a hardcoded list.
+  const fetcher = fetcherForEntity(client, entity, finderMethod);
 
   // Execute paginated query with enhanced error handling
   let paginationResult;
   try {
-    paginationResult = await paginatedQuery(client, finderMethod, pagination);
+    paginationResult = await paginatedQuery(fetcher, pagination);
   } catch (error) {
     // QB query errors (non-filterable fields, bad syntax) get enhanced messages
     if (isQBError(error)) {
@@ -65,9 +69,8 @@ export async function handleQuery(
   const { entityKey, apiCalls, truncated, startPositionSpecified, hasMore, returnedCount, requestedLimit } = paginationResult;
   const count = entities.length;
 
-  // Add QBO links for linkable transaction entities
-  const linkableEntities = ['journalentry', 'purchase', 'deposit', 'salesreceipt', 'bill', 'invoice', 'payment'];
-  const isLinkable = linkableEntities.includes(entity.toLowerCase());
+  // Add QBO links for entities with a confirmed QBO app route (see utils/urls.ts)
+  const isLinkable = hasQboUrl(entity);
 
   if (isLinkable && entities.length > 0) {
     entities = entities.map((record) => ({

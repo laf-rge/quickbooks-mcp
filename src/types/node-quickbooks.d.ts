@@ -26,6 +26,13 @@ declare module "node-quickbooks" {
     // Allow dynamic method access for finder methods
     [key: string]: unknown;
 
+    // Public instance fields set by the constructor. src/client/rest.ts reads
+    // these to reach entities that have no wrapper method below.
+    readonly endpoint: string;   // ".../v3/company/" (sandbox or production)
+    readonly realmId: string;
+    readonly token: string;      // OAuth 2.0 access token
+    readonly minorversion: number;
+
     // Token management
     refreshAccessToken(callback: Callback<TokenInfo>): void;
 

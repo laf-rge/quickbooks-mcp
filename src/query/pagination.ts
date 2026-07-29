@@ -3,6 +3,7 @@
 import QuickBooks from "node-quickbooks";
 import { PaginationParams, PaginatedQueryResult, QBQueryResponse } from "../types/index.js";
 import { promisify } from "../client/promisify.js";
+import { qboQuery } from "../client/rest.js";
 import { isHttpMode } from "../utils/output.js";
 
 // Pagination constants
@@ -63,10 +64,37 @@ export function parsePaginationFromQuery(query: string): PaginationParams {
   return { maxResults, startPosition, baseCriteria };
 }
 
+// Fetches one page of an entity query. Given a criteria string (WHERE clause
+// plus STARTPOSITION/MAXRESULTS), returns the raw QueryResponse envelope.
+export type QueryFetcher = (criteria: string) => Promise<unknown>;
+
+// Fetch through the node-quickbooks wrapper method for an entity.
+export function finderFetcher(client: QuickBooks, finderMethod: keyof QuickBooks): QueryFetcher {
+  const method = client[finderMethod] as (
+    criteria: string,
+    cb: (err: Error | null, result: unknown) => void
+  ) => void;
+  // Bind to client to preserve 'this' context
+  return (criteria) => promisify<unknown>((cb) => method.call(client, criteria, cb));
+}
+
+// Fetch through the raw REST query endpoint, for entities node-quickbooks has no
+// wrapper method for. Builds the same statement its find* methods do.
+export function rawFetcher(client: QuickBooks, entity: string): QueryFetcher {
+  return (criteria) => qboQuery(client, `select * from ${entity} ${criteria}`.trim());
+}
+
+// Resolve the cheapest fetcher for an entity: the wrapper method when one
+// exists, raw REST otherwise.
+export function fetcherForEntity(client: QuickBooks, entity: string, finderMethod: keyof QuickBooks): QueryFetcher {
+  return typeof client[finderMethod] === "function"
+    ? finderFetcher(client, finderMethod)
+    : rawFetcher(client, entity);
+}
+
 // Paginated query fetcher
 export async function paginatedQuery(
-  client: QuickBooks,
-  finderMethod: keyof QuickBooks,
+  fetcher: QueryFetcher,
   pagination: PaginationParams
 ): Promise<PaginatedQueryResult> {
   const { maxResults, startPosition, baseCriteria } = pagination;
@@ -80,17 +108,11 @@ export async function paginatedQuery(
     return parts.join(' ');
   };
 
-  // Type-safe wrapper to call the finder method (must bind to client to preserve 'this' context)
-  const callFinder = (criteria: string): Promise<unknown> => {
-    const method = client[finderMethod] as (criteria: string, cb: (err: Error | null, result: unknown) => void) => void;
-    return promisify<unknown>((cb) => method.call(client, criteria, cb));
-  };
-
   // If STARTPOSITION is specified, user wants explicit control - single fetch, no auto-pagination
   if (startPosition !== null) {
     const fetchLimit = Math.min(maxResults, BATCH_SIZE);
     const criteria = buildCriteria(startPosition, fetchLimit);
-    const result = await callFinder(criteria);
+    const result = await fetcher(criteria);
     const { entityKey, entities } = extractEntitiesFromResponse(result);
 
     // Probe for more data if we got exactly what we requested
@@ -99,7 +121,7 @@ export async function paginatedQuery(
     if (entities.length >= fetchLimit) {
       const probePosition = startPosition + entities.length;
       const probeCriteria = buildCriteria(probePosition, 1);
-      const probeResult = await callFinder(probeCriteria);
+      const probeResult = await fetcher(probeCriteria);
       apiCalls++;
       const probeEntities = extractEntitiesFromResponse(probeResult).entities;
       hasMore = probeEntities.length > 0;
@@ -130,7 +152,7 @@ export async function paginatedQuery(
     const batchSize = Math.min(BATCH_SIZE, remaining);
 
     const criteria = buildCriteria(currentPosition, batchSize);
-    const result = await callFinder(criteria);
+    const result = await fetcher(criteria);
     apiCalls++;
 
     const extracted = extractEntitiesFromResponse(result);
@@ -166,7 +188,7 @@ export async function paginatedQuery(
   let hasMore = truncated; // If truncated, we know there's more
   if (!truncated && allEntities.length >= targetLimit && allEntities.length < SAFETY_LIMIT) {
     const probeCriteria = buildCriteria(currentPosition, 1);
-    const probeResult = await callFinder(probeCriteria);
+    const probeResult = await fetcher(probeCriteria);
     apiCalls++;
     const probeEntities = extractEntitiesFromResponse(probeResult).entities;
     hasMore = probeEntities.length > 0;

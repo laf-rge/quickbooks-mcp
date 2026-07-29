@@ -7,6 +7,7 @@ export {
   isAuthError,
   getCompanyIdValue,
 } from './auth.js';
+export { qboRequest, qboQuery } from './rest.js';
 export {
   clearLookupCache,
   getDepartmentCache,
