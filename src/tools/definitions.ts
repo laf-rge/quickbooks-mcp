@@ -162,6 +162,14 @@ export const toolDefinitions = [
         department: {
           type: "string",
           description: "Filter to specific department/location (optional)"
+        },
+        offset: {
+          type: "number",
+          description: "Skip this many transactions (default: 0). Page through long results using the offset the previous call reports."
+        },
+        limit: {
+          type: "number",
+          description: "Max transactions returned in detail. Totals always cover the whole period regardless of this."
         }
       },
       required: ["account"]

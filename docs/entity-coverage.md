@@ -95,9 +95,29 @@ is the correct long-term fix for this whole class of gap.
 | Estimate, PurchaseOrder, TimeActivity | ❌ | non-posting by design |
 | RecurringTransaction | ❌ | template, not a transaction |
 
-Every call reports `coverage.scannedEntityTypes` in its report data, and warns
-in the summary when an individual entity query failed, so an incomplete
-drill-down is never presented as a complete one.
+Every call reports `coverage.scannedEntityTypes` in its report data (stdio only —
+it is static, and inline in HTTP it would be pure context cost), and warns in the
+summary when an individual entity query failed, so an incomplete drill-down is
+never presented as a complete one.
+
+### Completeness vs. the returned window
+
+Two different things can make a result look short, and they should not be
+confused:
+
+| | Meaning | How to get the rest |
+|---|---|---|
+| **Pagination** | The period has more transactions than this window returned. | Call again with the reported `offset`. Totals in `summary` already cover the full period. |
+| **Coverage** | The posting exists but carries no account reference (A/R, sales tax) or its entity type is not scanned. | Not retrievable here at all — use `account_period_summary`. |
+
+`summary.totalDebits` / `totalCredits` / `netChange` and `transactionCount` are
+always computed over the **full** result set, never the returned window, so they
+do not shift as a caller pages. Only `transactions` and `groupedByTransaction`
+are windowed.
+
+The window defaults to the full result set in stdio (detail goes to a temp file,
+so it is free) and to `HTTP_DEFAULT_LIMIT` transactions in HTTP mode (detail goes
+inline into the model's context). Both honor an explicit `limit`.
 
 ### Known partial extractions
 

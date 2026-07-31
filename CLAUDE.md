@@ -85,7 +85,14 @@ When building the `reportData` object passed to `outputReport()`, ask: **does th
 - **Yes**: Structured summaries, metadata, entity objects needed for follow-up edits (SyncToken, line IDs)
 - **No**: Raw API responses, full transaction lists for summary-only tools, redundant data the summary already covers
 
-For tools that return large datasets, cap the detail for HTTP mode using `isHttpMode()` from `src/utils/output.ts`. Compute summaries from the full data, then truncate the detail. See `account-transactions.ts` (`HTTP_TXN_LIMIT`) for the pattern.
+For tools that return large datasets, cap the detail for HTTP mode using `isHttpMode()` from `src/utils/output.ts`. Compute summaries from the full data, then window the detail. See `account-transactions.ts` (`HTTP_DEFAULT_LIMIT`) for the pattern.
+
+A cap alone is a dead end — the remote caller has no filesystem and cannot reach the rest. Pair it with a way out:
+
+- Window on whole records, not lines, so a page boundary can't split a transaction.
+- Default the window by transport: bounded in HTTP, full result set in stdio (the temp file is free).
+- Report the position back (`pagination.nextOffset`) **and** say so in the summary text — `query` emits `STARTPOSITION`, `query_account_transactions` emits `offset=`. A truncation notice with no continuation hint is a bug.
+- Keep totals computed over the full set so they never change as the caller pages.
 
 ## Common Files
 
