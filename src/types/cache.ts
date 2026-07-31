@@ -14,6 +14,10 @@ export interface CachedAccount {
   AccountType?: string;
   CurrentBalance?: number;
   Active?: boolean;
+  // QBO nests accounts arbitrarily deep; ParentRef is how the tree is walked.
+  SubAccount?: boolean;
+  ParentRef?: { value: string; name?: string };
+  CurrentBalanceWithSubAccounts?: number;
 }
 
 export interface DepartmentCache {

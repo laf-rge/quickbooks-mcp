@@ -302,7 +302,7 @@ QBO_INLINE_OUTPUT=true
 | `get_profit_loss` | Profit & Loss report (by month, department, class, etc.) |
 | `get_balance_sheet` | Balance Sheet report |
 | `get_trial_balance` | Trial Balance report |
-| `query_account_transactions` | All transactions affecting a specific account (13 posting entity types, paginated; see `docs/entity-coverage.md` for limits) |
+| `query_account_transactions` | All transactions affecting a specific account (13 posting entity types, paginated, optional sub-account rollup; see `docs/entity-coverage.md` for limits) |
 | `account_period_summary` | Period summary for an account (opening/closing balance, debits, credits, count) |
 | **Journal Entries** | |
 | `create_journal_entry` | Create a journal entry (validates debits = credits) |

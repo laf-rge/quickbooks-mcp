@@ -5,6 +5,7 @@ import {
   resolveAccount,
   getDepartmentCache,
   getAccountCache,
+  collectAccountTree,
 } from "../../client/index.js";
 import { toCents, sumCents, toDollars, outputReport, isHttpMode, mapWithConcurrency } from "../../utils/index.js";
 import { PaginationParams } from "../../types/index.js";
@@ -102,9 +103,10 @@ export async function handleQueryAccountTransactions(
     department?: string;
     offset?: number;
     limit?: number;
+    include_subaccounts?: boolean;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { account, start_date, end_date, department, offset = 0, limit } = args;
+  const { account, start_date, end_date, department, offset = 0, limit, include_subaccounts = false } = args;
 
   if (!Number.isInteger(offset) || offset < 0) {
     throw new Error(`offset must be a non-negative integer, got ${offset}`);
@@ -118,6 +120,15 @@ export async function handleQueryAccountTransactions(
 
   // Get account cache for name lookups
   const accountCache = await getAccountCache(client);
+
+  // Which AccountRefs count as a hit. Entity reads match one account by default;
+  // opting in to sub-accounts makes this agree with account_period_summary,
+  // whose General Ledger report rolls the subtree into the parent.
+  const wholeTree = collectAccountTree(accountCache, resolvedAccount.Id);
+  const subAccountIds = [...wholeTree].filter(id => id !== resolvedAccount.Id);
+  const targetAccountIds: ReadonlySet<string> = include_subaccounts
+    ? wholeTree
+    : new Set([resolvedAccount.Id]);
 
   // Resolve department if provided using cache
   let resolvedDepartmentId: string | undefined;
@@ -192,7 +203,7 @@ export async function handleQueryAccountTransactions(
     const lines = extractAccountLines(
       entities,
       type,
-      resolvedAccount.Id,
+      targetAccountIds,
       accountCache,
       resolvedDepartmentId
     );
@@ -278,6 +289,7 @@ export async function handleQueryAccountTransactions(
   const reportData = {
     account: {
       id: resolvedAccount.Id,
+      includedSubAccountIds: include_subaccounts ? subAccountIds : [],
       acctNum: resolvedAccount.AcctNum,
       name: resolvedAccount.FullyQualifiedName || resolvedAccount.Name,
       type: resolvedAccount.AccountType,
@@ -329,6 +341,21 @@ export async function handleQueryAccountTransactions(
 
   if (resolvedDepartmentName) {
     summaryLines.push(`Department: ${resolvedDepartmentName}`);
+  }
+
+  // Say which accounts were actually matched. Without this, a parent account
+  // that holds no postings of its own looks empty while account_period_summary
+  // reports plenty — the single most confusing disagreement between the two.
+  if (subAccountIds.length > 0) {
+    const names = subAccountIds
+      .map(id => accountCache.byId.get(id))
+      .map(a => (a?.AcctNum ? `${a.AcctNum} ${a.Name}` : a?.Name))
+      .filter(Boolean);
+    summaryLines.push(
+      include_subaccounts
+        ? `Including ${subAccountIds.length} sub-account(s): ${names.join(', ')}`
+        : `Note: this account has ${subAccountIds.length} sub-account(s) — ${names.join(', ')} — whose transactions are NOT included. Pass include_subaccounts=true to include them (account_period_summary always rolls them up).`
+    );
   }
 
   summaryLines.push('');
