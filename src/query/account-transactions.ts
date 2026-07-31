@@ -89,7 +89,13 @@ export function extractAccountLines(
       }
 
       case 'purchase': {
-        // Header: AccountRef is the bank/credit card account being debited
+        // Purchase.Credit marks a refund or return: the money comes back, so
+        // every side of the transaction flips. QBO's own reports honor this —
+        // without it a refund is counted as a second charge and the account
+        // never ties out to the General Ledger.
+        const purchaseSign = entity.Credit === true ? -1 : 1;
+
+        // Header: AccountRef is the bank/credit card account being credited
         const headerAccountRef = entity.AccountRef as AccountRef | undefined;
         const headerAccountId = headerAccountRef?.value || '';
         const headerDeptRef = entity.DepartmentRef as { value?: string; name?: string } | undefined;
@@ -106,7 +112,7 @@ export function extractAccountLines(
             txnId,
             docNumber,
             lineId: 'header',
-            amount: -totalAmt, // Credit to bank account
+            amount: -totalAmt * purchaseSign, // Credit to bank account; debit when a refund
             description: entity.PrivateNote as string | undefined,
             department: headerDeptRef?.name,
             qboLink,
@@ -134,7 +140,7 @@ export function extractAccountLines(
             txnId,
             docNumber,
             lineId: line.Id as string,
-            amount: line.Amount as number, // Debit to expense account
+            amount: (line.Amount as number) * purchaseSign, // Debit to expense account; credit when a refund
             description: line.Description as string | undefined,
             department: getDepartment(detail),
             qboLink,

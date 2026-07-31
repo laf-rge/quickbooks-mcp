@@ -160,6 +160,16 @@ The window defaults to the full result set in stdio (detail goes to a temp file,
 so it is free) and to `HTTP_DEFAULT_LIMIT` transactions in HTTP mode (detail goes
 inline into the model's context). Both honor an explicit `limit`.
 
+### Refunds flip the sign
+
+`Purchase.Credit === true` marks a refund or return rather than a charge. Both
+sides invert: the bank or card is **debited** and the expense account credited.
+QBO's own reports honor this, so an extractor that ignores it counts a refund as
+a second charge and the account cannot tie out to the General Ledger.
+
+Only `Purchase` carries this flag. Refunds on the sales side are their own
+entity (`RefundReceipt`), already signed correctly.
+
 ### Known partial extractions
 
 Real gaps within entities that *are* scanned:
