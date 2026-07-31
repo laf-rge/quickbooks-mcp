@@ -270,8 +270,11 @@ export async function handleQueryAccountTransactions(
       totalCredits,
       netChange
     },
+    // The scanned list is auditable but static — free in a stdio temp file,
+    // pure context cost inline in HTTP mode. Failures are always reported,
+    // since they mean the result is actually incomplete.
     coverage: {
-      scannedEntityTypes: POSTING_ENTITIES.map(e => e.type),
+      ...(isHttpMode() ? {} : { scannedEntityTypes: POSTING_ENTITIES.map(e => e.type) }),
       ...(failedTypes.length > 0 ? { failedEntityTypes: failedTypes } : {}),
     },
     transactions: outputLines,

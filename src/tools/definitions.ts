@@ -39,7 +39,7 @@ export const toolDefinitions = [
       properties: {
         query: {
           type: "string",
-          description: "The SQL-like query string. Any queryable QBO entity works, including ones with irregular names: Customer, Vendor, Invoice, Bill, Account, Item, Department, JournalEntry, Purchase, Payment, SalesReceipt, Deposit, BillPayment, VendorCredit, Transfer, CreditMemo, RefundReceipt, CreditCardPayment, TaxPayment, InventoryAdjustment, RecurringTransaction. Add MAXRESULTS N to limit results (default: 1000). Note: Most transaction fields (DepartmentRef, AccountRef, Line) are not filterable. Error responses include valid filterable fields for the entity. Use query_account_transactions for account/department filtering. Watch for entities whose response key differs from the queried name — CreditCardPayment returns CreditCardPaymentTxn objects.",
+          description: "The SQL-like query string, e.g. SELECT * FROM Bill WHERE TxnDate >= '2026-01-01'. Any queryable QBO entity works. Add MAXRESULTS N to limit results (default: 1000). Most transaction fields (DepartmentRef, AccountRef, Line) are not filterable; errors list the valid ones. Use query_account_transactions to filter by account or department.",
         },
       },
       required: ["query"],
@@ -143,7 +143,7 @@ export const toolDefinitions = [
   },
   {
     name: "query_account_transactions",
-    description: "Query all transactions affecting a specific account. Searches across JournalEntry, Purchase, Deposit, SalesReceipt, Bill, Invoice, Payment, BillPayment, VendorCredit, Transfer, CreditMemo, RefundReceipt, and CreditCardPayment. Returns a consolidated list with date, type, amount (debit/credit), and description, plus the entity types actually scanned. Useful for investigating account balance discrepancies. Limitation: postings whose account is implicit in QBO's data model cannot appear here — the A/R side of Invoice/CreditMemo/Payment has no ARAccountRef, and sales tax posts through TxnTaxDetail with no AccountRef. For a complete figure on those accounts use account_period_summary, which reads the General Ledger report.",
+    description: "Query all transactions affecting a specific account, across all 13 posting transaction types. Returns a consolidated list with date, type, amount (debit/credit), and description. Useful for investigating account balance discrepancies. Note: the A/R side of invoices, credit memos, and payments has no account reference in QBO's data model and cannot appear here — use account_period_summary for A/R totals.",
     inputSchema: {
       type: "object",
       properties: {
