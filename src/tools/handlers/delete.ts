@@ -4,7 +4,7 @@ import QuickBooks from "node-quickbooks";
 import { promisify } from "../../client/index.js";
 import { formatDollars, toCents } from "../../utils/index.js";
 
-type EntityType = "journal_entry" | "bill" | "invoice" | "deposit" | "sales_receipt" | "expense" | "vendor_credit" | "bill_payment";
+type EntityType = "journal_entry" | "bill" | "invoice" | "deposit" | "sales_receipt" | "expense" | "vendor_credit" | "bill_payment" | "attachable";
 
 interface EntityConfig {
   getMethod: string;
@@ -129,6 +129,16 @@ const ENTITY_CONFIG: Record<EntityType, EntityConfig> = {
       return lines.join("\n");
     },
   },
+  attachable: {
+    getMethod: "getAttachable",
+    deleteMethod: "deleteAttachable",
+    label: "Attachment",
+    formatSummary: (e) => {
+      const linkedEntity = (e.AttachableRef as Array<{ EntityRef?: { type?: string; value?: string } }>)?.[0]?.EntityRef;
+      const linked = linkedEntity?.type && linkedEntity?.value ? `linked to ${linkedEntity.type} #${linkedEntity.value}` : "(not linked to any entity)";
+      return `Attachment "${e.FileName}" — ${linked}`;
+    },
+  },
 };
 
 const VALID_TYPES = Object.keys(ENTITY_CONFIG).join(", ");
@@ -161,7 +171,7 @@ export async function handleDeleteEntity(
 
   // Execute delete
   await promisify<unknown>((cb) =>
-    (client as any)[config.deleteMethod]({ Id: id }, cb)
+    (client as any)[config.deleteMethod](id, cb)
   );
 
   return {
