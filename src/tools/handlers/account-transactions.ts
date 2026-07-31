@@ -8,8 +8,39 @@ import {
 } from "../../client/index.js";
 import { toCents, sumCents, toDollars, outputReport, isHttpMode } from "../../utils/index.js";
 import { PaginationParams } from "../../types/index.js";
-import { paginatedQuery, extractAccountLines } from "../../query/index.js";
+import { paginatedQuery, fetcherForEntity, extractAccountLines } from "../../query/index.js";
 import { TransactionLine } from "../../types/index.js";
+
+// Every QBO entity that posts to an account and exposes the account as a
+// reference in its JSON. `finder` is the node-quickbooks wrapper method; where
+// none exists the raw REST query endpoint is used instead (fetcherForEntity).
+//
+// Deliberately excluded:
+//   Estimate, PurchaseOrder, TimeActivity  — non-posting
+//   RecurringTransaction                   — a template, not a posting txn
+//   TaxPayment, InventoryAdjustment,
+//   ReimburseCharge                        — posting, but line shapes unverified
+//
+// Note that an entity appearing here does not make every side of it visible:
+// A/R has no ARAccountRef on Invoice, CreditMemo, or Payment, and sales tax
+// posts through TxnTaxDetail with no AccountRef. Those postings cannot be
+// recovered from entity JSON at all — see docs/entity-coverage.md.
+const POSTING_ENTITIES: Array<{ type: string; finder: string }> = [
+  { type: 'JournalEntry', finder: 'findJournalEntries' },
+  { type: 'Purchase', finder: 'findPurchases' },
+  { type: 'Deposit', finder: 'findDeposits' },
+  { type: 'SalesReceipt', finder: 'findSalesReceipts' },
+  { type: 'Bill', finder: 'findBills' },
+  { type: 'Invoice', finder: 'findInvoices' },
+  { type: 'Payment', finder: 'findPayments' },
+  { type: 'BillPayment', finder: 'findBillPayments' },
+  { type: 'VendorCredit', finder: 'findVendorCredits' },
+  { type: 'Transfer', finder: 'findTransfers' },
+  { type: 'CreditMemo', finder: 'findCreditMemos' },
+  { type: 'RefundReceipt', finder: 'findRefundReceipts' },
+  // No node-quickbooks wrapper — reached via raw REST
+  { type: 'CreditCardPayment', finder: 'findCreditCardPayments' },
+];
 
 // Group transactions by unique transaction key (type:txnId)
 interface GroupedTransaction {
@@ -105,34 +136,28 @@ export async function handleQueryAccountTransactions(
   // Build date filter for QB query
   const dateFilter = `TxnDate >= '${startDateResolved}' AND TxnDate <= '${endDateResolved}'`;
 
-  // Entity types to query
-  const entityTypes = [
-    { type: 'JournalEntry', finder: 'findJournalEntries' as keyof QuickBooks },
-    { type: 'Purchase', finder: 'findPurchases' as keyof QuickBooks },
-    { type: 'Deposit', finder: 'findDeposits' as keyof QuickBooks },
-    { type: 'SalesReceipt', finder: 'findSalesReceipts' as keyof QuickBooks },
-    { type: 'Bill', finder: 'findBills' as keyof QuickBooks },
-    { type: 'Invoice', finder: 'findInvoices' as keyof QuickBooks },
-    { type: 'Payment', finder: 'findPayments' as keyof QuickBooks },
-  ];
-
   // Query all entity types in parallel
   const queryResults = await Promise.all(
-    entityTypes.map(async ({ type, finder }) => {
+    POSTING_ENTITIES.map(async ({ type, finder }) => {
       const pagination: PaginationParams = {
         maxResults: 10000,  // Use full SAFETY_LIMIT for account transaction queries
         startPosition: null, // Auto-paginate
         baseCriteria: `WHERE ${dateFilter}`
       };
       try {
-        const result = await paginatedQuery(client, finder, pagination);
-        return { type, entities: result.entities as Array<Record<string, unknown>> };
+        const fetcher = fetcherForEntity(client, type, finder as keyof QuickBooks);
+        const result = await paginatedQuery(fetcher, pagination);
+        return { type, entities: result.entities as Array<Record<string, unknown>>, failed: false };
       } catch {
-        // Some entity types might fail (e.g., no permissions), continue with others
-        return { type, entities: [] };
+        // An entity type can fail on its own (permissions, unsupported in this
+        // company's region). Keep going, but report it rather than silently
+        // returning an incomplete drill-down.
+        return { type, entities: [], failed: true };
       }
     })
   );
+
+  const failedTypes = queryResults.filter(r => r.failed).map(r => r.type);
 
   // Extract lines matching the account from each entity type
   const allLines: TransactionLine[] = [];
@@ -245,6 +270,13 @@ export async function handleQueryAccountTransactions(
       totalCredits,
       netChange
     },
+    // The scanned list is auditable but static — free in a stdio temp file,
+    // pure context cost inline in HTTP mode. Failures are always reported,
+    // since they mean the result is actually incomplete.
+    coverage: {
+      ...(isHttpMode() ? {} : { scannedEntityTypes: POSTING_ENTITIES.map(e => e.type) }),
+      ...(failedTypes.length > 0 ? { failedEntityTypes: failedTypes } : {}),
+    },
     transactions: outputLines,
     groupedByTransaction: outputGrouped,
     ...(truncated ? { truncatedAt: HTTP_TXN_LIMIT, totalLines: allLines.length } : {}),
@@ -269,6 +301,21 @@ export async function handleQueryAccountTransactions(
 
   if (truncated) {
     summaryLines.push(`(Showing first ${HTTP_TXN_LIMIT} of ${allLines.length} transaction lines in detail)`);
+  }
+
+  if (failedTypes.length > 0) {
+    summaryLines.push(`Warning: could not query ${failedTypes.join(', ')} — results may be incomplete.`);
+  }
+
+  // Invoice, CreditMemo, and Payment carry no ARAccountRef, so their A/R side is
+  // absent from the entity JSON entirely. A short result on an A/R account is
+  // therefore not proof of no activity.
+  if (resolvedAccount.AccountType === 'Accounts Receivable') {
+    summaryLines.push(
+      'Note: the A/R side of Invoice, CreditMemo, and Payment has no ARAccountRef in ' +
+      'QBO entity JSON and cannot appear here. Use account_period_summary, which reads ' +
+      'the General Ledger report, for a complete figure.'
+    );
   }
 
   if (groupedTransactions.length > 0) {

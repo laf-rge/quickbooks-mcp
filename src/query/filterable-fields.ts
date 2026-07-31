@@ -35,6 +35,9 @@ const FILTERABLE_FIELDS: Record<string, string[]> = {
     'TxnDate', 'MetaData.CreateTime', 'MetaData.LastUpdatedTime',
     'CustomerRef', 'TotalAmt',
   ],
+  CreditCardPayment: [
+    'TxnDate', 'VendorRef', 'Id',
+  ],
   Customer: [
     'DisplayName', 'GivenName', 'FamilyName', 'CompanyName',
     'PrimaryEmailAddr', 'Active', 'Balance',

@@ -4,6 +4,28 @@
 
 Only fields marked as **"filterable"** in the [Intuit API reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/account) are queryable in WHERE clauses.
 
+### Accounts That Are Not In The Payload
+
+Some postings carry no account reference at all, so they cannot be found by
+matching `*AccountRef` fields in entity JSON:
+
+| Entity | Missing reference |
+|--------|-------------------|
+| `Invoice` | No `ARAccountRef` — the A/R side is implicit |
+| `CreditMemo` | No `ARAccountRef` |
+| `Payment` | No `ARAccountRef` (only `DepositToAccountRef`) |
+| any sales txn | Sales tax posts via `TxnTaxDetail`, which has `TaxRateRef`, not `AccountRef` |
+
+Use the General Ledger report (via `account_period_summary`) when a complete
+account figure is required. See `docs/entity-coverage.md`.
+
+### Entity Names Differ Between URL, Query, and JSON
+
+`CreditCardPayment` uses three spellings: the REST path is `/creditcardpayment`,
+the query is `select * from creditcardpayment`, but the JSON wrapper key in both
+requests and responses is **`CreditCardPaymentTxn`**. Do not assume the queried
+name is the response key — read the key from the response.
+
 ### Non-Filterable Reference Fields
 
 The following reference fields are **NOT queryable** on transaction entities:

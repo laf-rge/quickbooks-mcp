@@ -39,7 +39,7 @@ export const toolDefinitions = [
       properties: {
         query: {
           type: "string",
-          description: "The SQL-like query string. Common entities: Customer, Vendor, Invoice, Bill, Account, Item, Department, JournalEntry, Purchase, Payment, SalesReceipt, Deposit. Add MAXRESULTS N to limit results (default: 1000). Note: Most transaction fields (DepartmentRef, AccountRef, Line) are not filterable. Error responses include valid filterable fields for the entity. Use query_account_transactions for account/department filtering.",
+          description: "The SQL-like query string, e.g. SELECT * FROM Bill WHERE TxnDate >= '2026-01-01'. Any queryable QBO entity works. Add MAXRESULTS N to limit results (default: 1000). Most transaction fields (DepartmentRef, AccountRef, Line) are not filterable; errors list the valid ones. Use query_account_transactions to filter by account or department.",
         },
       },
       required: ["query"],
@@ -143,7 +143,7 @@ export const toolDefinitions = [
   },
   {
     name: "query_account_transactions",
-    description: "Query all transactions affecting a specific account. Searches across JournalEntry, Purchase, Deposit, SalesReceipt, Bill, Invoice, and Payment. Returns consolidated list with date, type, amount (debit/credit), and description. Useful for investigating account balance discrepancies.",
+    description: "Query all transactions affecting a specific account, across all 13 posting transaction types. Returns a consolidated list with date, type, amount (debit/credit), and description. Useful for investigating account balance discrepancies. Note: the A/R side of invoices, credit memos, and payments has no account reference in QBO's data model and cannot appear here — use account_period_summary for A/R totals.",
     inputSchema: {
       type: "object",
       properties: {
