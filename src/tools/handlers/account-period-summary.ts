@@ -4,7 +4,7 @@
 
 import QuickBooks from "node-quickbooks";
 import { resolveAccount, resolveDepartmentId, promisify } from "../../client/index.js";
-import { outputReport } from "../../utils/index.js";
+import { outputReport, toCents, toDollars } from "../../utils/index.js";
 import { QBReport } from "../../types/index.js";
 
 interface GLRowColData {
@@ -48,21 +48,30 @@ interface PeriodSummary {
  *
  * Columns: Date, Transaction Type, Num, Name, Memo/Description, Split, Amount, Balance
  * - "Amount" column: negative = debit, positive = credit
- * - "Balance" column: running balance (present on transaction rows, not on Summary)
- * - "Beginning Balance" row: Balance column has opening balance
+ * - "Balance" column: running balance, restarting at each section
+ * - "Beginning Balance" row: Balance column has that section's opening balance
  * - Summary row: Amount column has net activity total; Balance column is empty
- * - Closing balance: Balance column of the last transaction row
+ *
+ * A report for a parent account contains one section per account in the subtree,
+ * each with its own Beginning Balance and its own running Balance. Opening
+ * balances therefore sum across sections, but the running Balance column does
+ * NOT — the last row of the report is only the last *section's* closing figure.
+ * Closing is derived as opening + net activity, which is true per section and
+ * per rollup, rather than read from that column.
+ *
+ * Amounts accumulate in integer cents (see src/utils/money.ts) so a few hundred
+ * float additions cannot drift the totals.
  */
-function parseGLReport(report: GLReport): PeriodSummary {
+// Exported for verification: this is where the rollup arithmetic lives.
+export function parseGLReport(report: GLReport): PeriodSummary {
   const columns = report.Columns?.Column ?? [];
 
   const amountIdx = columns.findIndex(c => c.ColTitle === "Amount");
   const balanceIdx = columns.findIndex(c => c.ColTitle === "Balance");
 
-  let openingBalance = 0;
-  let closingBalance = 0;
-  let totalDebits = 0;
-  let totalCredits = 0;
+  let openingCents = 0;
+  let totalDebitsCents = 0;
+  let totalCreditsCents = 0;
   let transactionCount = 0;
 
   const rows = report.Rows?.Row ?? [];
@@ -80,8 +89,9 @@ function parseGLReport(report: GLReport): PeriodSummary {
         const firstCol = colData[0]?.value ?? "";
 
         if (firstCol === "Beginning Balance") {
+          // One per section; a rollup report has several, and they sum.
           if (balanceIdx >= 0 && colData[balanceIdx]?.value) {
-            openingBalance += parseFloat(colData[balanceIdx].value!) || 0;
+            openingCents += toCents(parseFloat(colData[balanceIdx].value!) || 0);
           }
           continue;
         }
@@ -94,15 +104,10 @@ function parseGLReport(report: GLReport): PeriodSummary {
         if (amount !== 0) {
           transactionCount++;
           if (amount < 0) {
-            totalDebits += Math.abs(amount);
+            totalDebitsCents += toCents(Math.abs(amount));
           } else {
-            totalCredits += amount;
+            totalCreditsCents += toCents(amount);
           }
-        }
-
-        // Track running balance — last row's balance = closing balance
-        if (balanceIdx >= 0 && colData[balanceIdx]?.value) {
-          closingBalance = parseFloat(colData[balanceIdx].value!) || 0;
         }
       }
     }
@@ -110,19 +115,16 @@ function parseGLReport(report: GLReport): PeriodSummary {
 
   processRows(rows);
 
-  // If no transactions, closing = opening
-  if (transactionCount === 0) {
-    closingBalance = openingBalance;
-  }
-
-  const netActivity = totalCredits - totalDebits;
+  const netActivityCents = totalCreditsCents - totalDebitsCents;
 
   return {
-    openingBalance,
-    closingBalance,
-    totalDebits,
-    totalCredits,
-    netActivity,
+    openingBalance: toDollars(openingCents),
+    // Derived, not read from the Balance column: that column restarts per
+    // section, so on a rollup its final value is just the last sub-account's.
+    closingBalance: toDollars(openingCents + netActivityCents),
+    totalDebits: toDollars(totalDebitsCents),
+    totalCredits: toDollars(totalCreditsCents),
+    netActivity: toDollars(netActivityCents),
     transactionCount,
   };
 }
