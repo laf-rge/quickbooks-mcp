@@ -25,6 +25,12 @@ import { TransactionLine } from "../../types/index.js";
 // A/R has no ARAccountRef on Invoice, CreditMemo, or Payment, and sales tax
 // posts through TxnTaxDetail with no AccountRef. Those postings cannot be
 // recovered from entity JSON at all — see docs/entity-coverage.md.
+// Default window size in HTTP mode, in transactions. HTTP has no filesystem, so
+// the detail goes straight into the model's context and must be bounded; stdio
+// writes to a temp file and defaults to the full result set. Sized so a typical
+// page stays close to the inline payload the previous 100-line cap produced.
+const HTTP_DEFAULT_LIMIT = 50;
+
 const POSTING_ENTITIES: Array<{ type: string; finder: string }> = [
   { type: 'JournalEntry', finder: 'findJournalEntries' },
   { type: 'Purchase', finder: 'findPurchases' },
@@ -88,9 +94,18 @@ export async function handleQueryAccountTransactions(
     start_date?: string;
     end_date?: string;
     department?: string;
+    offset?: number;
+    limit?: number;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { account, start_date, end_date, department } = args;
+  const { account, start_date, end_date, department, offset = 0, limit } = args;
+
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error(`offset must be a non-negative integer, got ${offset}`);
+  }
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+    throw new Error(`limit must be a positive integer, got ${limit}`);
+  }
 
   // Resolve account using cache
   const resolvedAccount = await resolveAccount(client, account);
@@ -230,21 +245,22 @@ export async function handleQueryAccountTransactions(
     };
   }
 
-  // In HTTP mode, cap transaction detail to avoid context bloat.
-  // Summary is always computed from the full dataset.
-  const HTTP_TXN_LIMIT = 100;
-  const truncated = isHttpMode() && allLines.length > HTTP_TXN_LIMIT;
+  // Window over whole transactions, never lines, so a page boundary can't split
+  // a journal entry in half. Summary stats above are always computed from the
+  // full result set, so totals stay correct no matter which window is returned.
+  const totalTransactions = groupedTransactions.length;
+  const windowOffset = Math.min(offset, totalTransactions);
+  const windowLimit = limit ?? (isHttpMode() ? HTTP_DEFAULT_LIMIT : totalTransactions);
+  const windowTxns = groupedTransactions.slice(windowOffset, windowOffset + windowLimit);
+  const nextOffset = windowOffset + windowTxns.length;
+  const hasMore = nextOffset < totalTransactions;
 
-  const outputLines = truncated ? allLines.slice(0, HTTP_TXN_LIMIT) : allLines;
+  const windowKeys = new Set(windowTxns.map(t => `${t.type}:${t.txnId}`));
+  const outputLines = allLines.filter(l => windowKeys.has(`${l.type}:${l.txnId}`));
   const outputGrouped: typeof groupedByTransaction = {};
-  if (truncated) {
-    // Only include groups that have at least one line in the truncated set
-    const truncatedTxnKeys = new Set(outputLines.map(l => `${l.type}:${l.txnId}`));
-    for (const [key, value] of Object.entries(groupedByTransaction)) {
-      if (truncatedTxnKeys.has(key)) outputGrouped[key] = value;
-    }
-  } else {
-    Object.assign(outputGrouped, groupedByTransaction);
+  for (const txn of windowTxns) {
+    const key = `${txn.type}:${txn.txnId}`;
+    outputGrouped[key] = groupedByTransaction[key];
   }
 
   const reportData = {
@@ -277,9 +293,16 @@ export async function handleQueryAccountTransactions(
       ...(isHttpMode() ? {} : { scannedEntityTypes: POSTING_ENTITIES.map(e => e.type) }),
       ...(failedTypes.length > 0 ? { failedEntityTypes: failedTypes } : {}),
     },
+    pagination: {
+      offset: windowOffset,
+      limit: windowLimit,
+      returnedTransactions: windowTxns.length,
+      totalTransactions,
+      hasMore,
+      ...(hasMore ? { nextOffset } : {}),
+    },
     transactions: outputLines,
     groupedByTransaction: outputGrouped,
-    ...(truncated ? { truncatedAt: HTTP_TXN_LIMIT, totalLines: allLines.length } : {}),
   };
 
   // Build summary for display
@@ -299,8 +322,15 @@ export async function handleQueryAccountTransactions(
   summaryLines.push('');
   summaryLines.push(`Summary: ${groupedTransactions.length} transactions | Debits: ${formatCurrency(totalDebits)} | Credits: ${formatCurrency(totalCredits)} | Net: ${netChange >= 0 ? '' : '-'}${formatCurrency(netChange)}`);
 
-  if (truncated) {
-    summaryLines.push(`(Showing first ${HTTP_TXN_LIMIT} of ${allLines.length} transaction lines in detail)`);
+  if (windowTxns.length === 0 && windowOffset > 0) {
+    summaryLines.push(`No transactions at offset ${windowOffset} — the period has ${totalTransactions}.`);
+  } else if (windowTxns.length < totalTransactions) {
+    summaryLines.push(
+      `Showing transactions ${windowOffset + 1}-${nextOffset} of ${totalTransactions} in detail.`
+    );
+    if (hasMore) {
+      summaryLines.push(`To fetch more: call again with offset=${nextOffset}.`);
+    }
   }
 
   if (failedTypes.length > 0) {
@@ -318,12 +348,14 @@ export async function handleQueryAccountTransactions(
     );
   }
 
-  if (groupedTransactions.length > 0) {
+  // Preview the returned window, not the full set — otherwise every page of a
+  // paginated walk shows the same five transactions.
+  if (windowTxns.length > 0) {
     summaryLines.push('');
-    summaryLines.push('Recent (first 5 transactions):');
+    summaryLines.push(`Preview (first 5 of this page):`);
     summaryLines.push('');
 
-    for (const txn of groupedTransactions.slice(0, 5)) {
+    for (const txn of windowTxns.slice(0, 5)) {
       const docNum = txn.docNumber ? ` #${txn.docNumber}` : '';
       const dept = txn.department ? ` [${txn.department}]` : '';
 
