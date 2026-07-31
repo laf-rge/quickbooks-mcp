@@ -4,6 +4,7 @@ import QuickBooks from "node-quickbooks";
 import { PaginationParams, PaginatedQueryResult, QBQueryResponse } from "../types/index.js";
 import { promisify } from "../client/promisify.js";
 import { qboQuery } from "../client/rest.js";
+import { withRetry } from "../client/throttle.js";
 import { isHttpMode } from "../utils/output.js";
 
 // Pagination constants
@@ -85,11 +86,13 @@ export function rawFetcher(client: QuickBooks, entity: string): QueryFetcher {
 }
 
 // Resolve the cheapest fetcher for an entity: the wrapper method when one
-// exists, raw REST otherwise.
+// exists, raw REST otherwise. Wrapped in retry so a throttled or dropped page
+// doesn't surface as an entity that quietly returned nothing.
 export function fetcherForEntity(client: QuickBooks, entity: string, finderMethod: keyof QuickBooks): QueryFetcher {
-  return typeof client[finderMethod] === "function"
+  const fetcher = typeof client[finderMethod] === "function"
     ? finderFetcher(client, finderMethod)
     : rawFetcher(client, entity);
+  return (criteria) => withRetry(() => fetcher(criteria));
 }
 
 // Paginated query fetcher
