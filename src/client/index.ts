@@ -8,6 +8,7 @@ export {
   getCompanyIdValue,
 } from './auth.js';
 export { qboRequest, qboQuery } from './rest.js';
+export { withRetry, isRetryableError } from './throttle.js';
 export {
   clearLookupCache,
   getDepartmentCache,

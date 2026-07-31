@@ -100,6 +100,23 @@ it is static, and inline in HTTP it would be pure context cost), and warns in th
 summary when an individual entity query failed, so an incomplete drill-down is
 never presented as a complete one.
 
+### Throttling is a third way a result can look short
+
+Intuit throttles per realm. The drill-down queries 13 entity types and each one
+auto-paginates, so firing them all at once reliably trips the limit — and a
+throttled entity comes back empty, which reads as "no activity on this account"
+rather than "ask again". Two guards:
+
+- Entity queries run at `ENTITY_QUERY_CONCURRENCY` (4) at a time rather than all
+  at once.
+- `fetcherForEntity` wraps every page fetch in `withRetry`, which backs off with
+  jitter on 429/5xx and network errors. Validation faults (4xxx) and auth faults
+  (3xxx) are **not** retried — a malformed query fails identically every time,
+  and retrying it burns throttle budget the other queries need.
+
+If an entity still fails after retries, the summary names it explicitly. Treat
+that warning as "this result is incomplete", not as a cosmetic note.
+
 ### Completeness vs. the returned window
 
 Two different things can make a result look short, and they should not be

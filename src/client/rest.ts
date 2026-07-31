@@ -63,8 +63,11 @@ export async function qboRequest<T>(
     if (response.status === 401) {
       throw { Fault: { Error: [{ Message: "Unauthorized", code: "401" }], type: "AUTHENTICATION" } };
     }
-    throw new Error(
-      `QuickBooks request failed (HTTP ${response.status}): ${text.slice(0, ERROR_BODY_CHARS)}`
+    // Carry the status so isRetryableError can tell a throttle (429) from a
+    // permanent failure without parsing the message.
+    throw Object.assign(
+      new Error(`QuickBooks request failed (HTTP ${response.status}): ${text.slice(0, ERROR_BODY_CHARS)}`),
+      { status: response.status }
     );
   }
 

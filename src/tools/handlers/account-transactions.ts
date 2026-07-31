@@ -6,10 +6,22 @@ import {
   getDepartmentCache,
   getAccountCache,
 } from "../../client/index.js";
-import { toCents, sumCents, toDollars, outputReport, isHttpMode } from "../../utils/index.js";
+import { toCents, sumCents, toDollars, outputReport, isHttpMode, mapWithConcurrency } from "../../utils/index.js";
 import { PaginationParams } from "../../types/index.js";
 import { paginatedQuery, fetcherForEntity, extractAccountLines } from "../../query/index.js";
 import { TransactionLine } from "../../types/index.js";
+
+// Default window size in HTTP mode, in transactions. HTTP has no filesystem, so
+// the detail goes straight into the model's context and must be bounded; stdio
+// writes to a temp file and defaults to the full result set. Sized so a typical
+// page stays close to the inline payload the previous 100-line cap produced.
+const HTTP_DEFAULT_LIMIT = 50;
+
+// Entity queries in flight at once. Intuit throttles per realm, and each of
+// these auto-paginates, so the real request count is higher than the entity
+// count. Low enough to stay under the limit, high enough that the drill-down
+// still completes promptly.
+const ENTITY_QUERY_CONCURRENCY = 4;
 
 // Every QBO entity that posts to an account and exposes the account as a
 // reference in its JSON. `finder` is the node-quickbooks wrapper method; where
@@ -25,12 +37,6 @@ import { TransactionLine } from "../../types/index.js";
 // A/R has no ARAccountRef on Invoice, CreditMemo, or Payment, and sales tax
 // posts through TxnTaxDetail with no AccountRef. Those postings cannot be
 // recovered from entity JSON at all — see docs/entity-coverage.md.
-// Default window size in HTTP mode, in transactions. HTTP has no filesystem, so
-// the detail goes straight into the model's context and must be bounded; stdio
-// writes to a temp file and defaults to the full result set. Sized so a typical
-// page stays close to the inline payload the previous 100-line cap produced.
-const HTTP_DEFAULT_LIMIT = 50;
-
 const POSTING_ENTITIES: Array<{ type: string; finder: string }> = [
   { type: 'JournalEntry', finder: 'findJournalEntries' },
   { type: 'Purchase', finder: 'findPurchases' },
@@ -151,9 +157,15 @@ export async function handleQueryAccountTransactions(
   // Build date filter for QB query
   const dateFilter = `TxnDate >= '${startDateResolved}' AND TxnDate <= '${endDateResolved}'`;
 
-  // Query all entity types in parallel
-  const queryResults = await Promise.all(
-    POSTING_ENTITIES.map(async ({ type, finder }) => {
+  // Query the entity types with bounded parallelism. Firing all 13 at once
+  // reliably trips Intuit's per-realm throttle, and a throttled entity comes
+  // back empty — which in a drill-down reads as "no activity on this account"
+  // rather than "ask again". Retry lives in the fetcher; this keeps us from
+  // needing it in the first place.
+  const queryResults = await mapWithConcurrency(
+    POSTING_ENTITIES,
+    ENTITY_QUERY_CONCURRENCY,
+    async ({ type, finder }) => {
       const pagination: PaginationParams = {
         maxResults: 10000,  // Use full SAFETY_LIMIT for account transaction queries
         startPosition: null, // Auto-paginate
@@ -169,7 +181,7 @@ export async function handleQueryAccountTransactions(
         // returning an incomplete drill-down.
         return { type, entities: [], failed: true };
       }
-    })
+    }
   );
 
   const failedTypes = queryResults.filter(r => r.failed).map(r => r.type);

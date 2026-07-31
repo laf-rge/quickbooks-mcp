@@ -1,6 +1,6 @@
 {
   "name": "quickbooks-mcp",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "MCP server for QuickBooks Online API integration",
   "license": "MIT",
   "mcpName": "io.github.laf-rge/quickbooks-mcp",
