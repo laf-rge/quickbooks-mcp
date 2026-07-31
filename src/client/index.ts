@@ -19,4 +19,5 @@ export {
   resolveItem,
   resolveCustomer,
   resolveDepartmentId,
+  collectAccountTree,
 } from './cache.js';

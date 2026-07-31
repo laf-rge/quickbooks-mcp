@@ -100,6 +100,30 @@ it is static, and inline in HTTP it would be pure context cost), and warns in th
 summary when an individual entity query failed, so an incomplete drill-down is
 never presented as a complete one.
 
+### Parent accounts: the drill-down and the reports count differently
+
+This is the single most confusing disagreement between the two account tools,
+and it is the data model rather than a bug:
+
+| Tool | Backed by | Counts sub-accounts? |
+|---|---|---|
+| `account_period_summary` | General Ledger report | **Always** — rolled into the parent |
+| `query_account_transactions` | Entity reads matching `AccountRef` | Only with `include_subaccounts: true` |
+
+A parent account that holds no postings of its own — common when a card or loan
+is tracked through named sub-accounts — reports plenty of activity in
+`account_period_summary` and **zero** in the drill-down. Nothing is missing; the
+postings name the sub-account, and an entity read matches one `AccountRef`.
+
+`include_subaccounts` defaults to `false` so existing callers keep their current
+results. When the resolved account has children and they were not included, the
+summary says so and names them, so the discrepancy explains itself rather than
+looking like missing data.
+
+Sub-accounts are collected with `collectAccountTree`, which walks `ParentRef`
+transitively — QBO nests up to five levels, so checking one level down is not
+enough — and tolerates a cyclic `ParentRef` without hanging.
+
 ### Throttling is a third way a result can look short
 
 Intuit throttles per realm. The drill-down queries 13 entity types and each one

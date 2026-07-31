@@ -23,7 +23,7 @@ function getAccountName(accountId: string, accountCache: AccountCache, refName?:
 export function extractAccountLines(
   entities: Array<Record<string, unknown>>,
   entityType: string,
-  targetAccountId: string,
+  targetAccountIds: ReadonlySet<string>,
   accountCache: AccountCache,
   departmentFilter?: string
 ): TransactionLine[] {
@@ -62,7 +62,7 @@ export function extractAccountLines(
 
           const accountRef = detail.AccountRef as AccountRef | undefined;
           const accountId = accountRef?.value || '';
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           const postingType = detail.PostingType as string;
@@ -97,7 +97,7 @@ export function extractAccountLines(
 
         if (headerAccountId && headerMatchesDept) {
           const totalAmt = entity.TotalAmt as number;
-          const isMatching = headerAccountId === targetAccountId;
+          const isMatching = targetAccountIds.has(headerAccountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -125,7 +125,7 @@ export function extractAccountLines(
 
           const accountRef = detail.AccountRef as AccountRef | undefined;
           const accountId = accountRef?.value || '';
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -155,7 +155,7 @@ export function extractAccountLines(
 
         if (headerAccountId && headerMatchesDept) {
           const totalAmt = entity.TotalAmt as number;
-          const isMatching = headerAccountId === targetAccountId;
+          const isMatching = targetAccountIds.has(headerAccountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -183,7 +183,7 @@ export function extractAccountLines(
 
           const accountRef = detail.AccountRef as AccountRef | undefined;
           const accountId = accountRef?.value || '';
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -213,7 +213,7 @@ export function extractAccountLines(
 
         if (headerAccountId && headerMatchesDept) {
           const totalAmt = entity.TotalAmt as number;
-          const isMatching = headerAccountId === targetAccountId;
+          const isMatching = targetAccountIds.has(headerAccountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -244,7 +244,7 @@ export function extractAccountLines(
           const accountId = itemAccountRef?.value || '';
           if (!accountId) continue; // Skip lines without explicit account
 
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           // Get item name for description context
@@ -280,7 +280,7 @@ export function extractAccountLines(
 
         if (headerAccountId && headerMatchesDept) {
           const totalAmt = entity.TotalAmt as number;
-          const isMatching = headerAccountId === targetAccountId;
+          const isMatching = targetAccountIds.has(headerAccountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -308,7 +308,7 @@ export function extractAccountLines(
 
           const accountRef = detail.AccountRef as AccountRef | undefined;
           const accountId = accountRef?.value || '';
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -339,7 +339,7 @@ export function extractAccountLines(
         const invoiceMatchesDept = !departmentFilter || invoiceDeptRef?.value === departmentFilter;
 
         if (depositToRef?.value && depositAmt && invoiceMatchesDept) {
-          const isMatching = depositToRef.value === targetAccountId;
+          const isMatching = targetAccountIds.has(depositToRef.value);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -366,7 +366,7 @@ export function extractAccountLines(
           const accountId = itemAccountRef?.value || '';
           if (!accountId) continue; // Skip lines without explicit account
 
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           // Get item name for description context
@@ -408,7 +408,7 @@ export function extractAccountLines(
 
           // A/P side: debit (paying a bill reduces what is owed)
           if (apRef?.value) {
-            const isMatching = apRef.value === targetAccountId;
+            const isMatching = targetAccountIds.has(apRef.value);
             if (isMatching) hasMatchingLine = true;
             extractedLines.push({
               date: txnDate, type: 'BillPayment', txnId, docNumber, lineId: 'header',
@@ -423,7 +423,7 @@ export function extractAccountLines(
 
           // Funding side: credit
           if (payRef?.value) {
-            const isMatching = payRef.value === targetAccountId;
+            const isMatching = targetAccountIds.has(payRef.value);
             if (isMatching) hasMatchingLine = true;
             extractedLines.push({
               date: txnDate, type: 'BillPayment', txnId, docNumber, lineId: 'payment',
@@ -448,7 +448,7 @@ export function extractAccountLines(
 
         if (headerAccountId && headerMatchesDept) {
           const totalAmt = entity.TotalAmt as number;
-          const isMatching = headerAccountId === targetAccountId;
+          const isMatching = targetAccountIds.has(headerAccountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -471,7 +471,7 @@ export function extractAccountLines(
 
           const accountRef = detail.AccountRef as AccountRef | undefined;
           const accountId = accountRef?.value || '';
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -500,7 +500,7 @@ export function extractAccountLines(
           [fromRef, -amount, 'from'],
         ] as Array<[AccountRef | undefined, number, string]>) {
           if (!ref?.value) continue;
-          const isMatching = ref.value === targetAccountId;
+          const isMatching = targetAccountIds.has(ref.value);
           if (isMatching) hasMatchingLine = true;
           extractedLines.push({
             date: txnDate, type: 'Transfer', txnId, docNumber, lineId,
@@ -528,7 +528,7 @@ export function extractAccountLines(
           [bankRef, -amount, 'bank'],
         ] as Array<[AccountRef | undefined, number, string]>) {
           if (!ref?.value) continue;
-          const isMatching = ref.value === targetAccountId;
+          const isMatching = targetAccountIds.has(ref.value);
           if (isMatching) hasMatchingLine = true;
           extractedLines.push({
             date: txnDate, type: 'CreditCardPayment', txnId, docNumber, lineId,
@@ -557,7 +557,7 @@ export function extractAccountLines(
           const accountId = itemAccountRef?.value || '';
           if (!accountId) continue;
 
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           const itemRef = detail.ItemRef as { name?: string } | undefined;
@@ -586,7 +586,7 @@ export function extractAccountLines(
 
         if (headerAccountId && headerMatchesDept) {
           const totalAmt = entity.TotalAmt as number;
-          const isMatching = headerAccountId === targetAccountId;
+          const isMatching = targetAccountIds.has(headerAccountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({
@@ -611,7 +611,7 @@ export function extractAccountLines(
           const accountId = itemAccountRef?.value || '';
           if (!accountId) continue;
 
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           const itemRef = detail.ItemRef as { name?: string } | undefined;
@@ -640,7 +640,7 @@ export function extractAccountLines(
 
         if (accountId && headerMatchesDept) {
           const totalAmt = entity.TotalAmt as number;
-          const isMatching = accountId === targetAccountId;
+          const isMatching = targetAccountIds.has(accountId);
           if (isMatching) hasMatchingLine = true;
 
           extractedLines.push({

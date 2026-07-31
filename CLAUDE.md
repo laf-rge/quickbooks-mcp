@@ -141,8 +141,9 @@ Both builds must pass before committing. After changes, restart Claude Code to r
   429/5xx — a throttled query returns empty, which silently reads as "no data"
 - **Parent vs. sub-account**: report-based tools (`account_period_summary`) roll
   sub-accounts up into the parent; entity-based tools (`query_account_transactions`)
-  match the exact account ID only. The two will disagree on any parent account —
-  that is the data model, not a bug
+  match the exact account ID only. Pass `include_subaccounts: true` to make them
+  agree. Walk the tree with `collectAccountTree` — QBO nests up to 5 deep, so
+  checking `ParentRef` one level is not enough
 - node-quickbooks only wraps ~35 entities; use `src/client/rest.ts` for the rest
 - Some postings have no account reference in the payload (A/R, sales tax) and are
   invisible to entity-based reads — see `docs/entity-coverage.md`

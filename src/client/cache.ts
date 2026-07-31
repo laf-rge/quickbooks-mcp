@@ -273,3 +273,33 @@ export async function resolveCustomer(client: QuickBooks, nameOrId: string): Pro
 
   return { value: customer.Id, name: customer.DisplayName };
 }
+
+/**
+ * An account plus every account nested beneath it, by Id.
+ *
+ * Report-based tools (the General Ledger behind account_period_summary) roll
+ * sub-account activity up into the parent, while entity-based reads match a
+ * single AccountRef. Callers that want to agree with the reports need the whole
+ * subtree. QBO nests arbitrarily deep, so this walks rather than checking
+ * ParentRef one level down.
+ */
+export function collectAccountTree(cache: AccountCache, rootId: string): Set<string> {
+  const childrenByParent = new Map<string, string[]>();
+  for (const account of cache.items) {
+    const parentId = account.ParentRef?.value;
+    if (!parentId) continue;
+    const siblings = childrenByParent.get(parentId);
+    if (siblings) siblings.push(account.Id);
+    else childrenByParent.set(parentId, [account.Id]);
+  }
+
+  const ids = new Set<string>();
+  const pending = [rootId];
+  while (pending.length > 0) {
+    const id = pending.pop()!;
+    if (ids.has(id)) continue; // also guards against a cyclic ParentRef
+    ids.add(id);
+    for (const childId of childrenByParent.get(id) ?? []) pending.push(childId);
+  }
+  return ids;
+}

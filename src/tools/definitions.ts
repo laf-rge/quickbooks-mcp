@@ -170,6 +170,10 @@ export const toolDefinitions = [
         limit: {
           type: "number",
           description: "Max transactions returned in detail. Totals always cover the whole period regardless of this."
+        },
+        include_subaccounts: {
+          type: "boolean",
+          description: "Also match transactions posting to sub-accounts of this account (default: false). Needed to reconcile against account_period_summary, which always rolls sub-accounts into the parent."
         }
       },
       required: ["account"]
