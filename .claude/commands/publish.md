@@ -10,8 +10,11 @@ If no argument is provided, ask the user which bump type they want (patch, minor
 ### 1. Pre-flight checks
 
 - Verify the working directory is clean (`git status` shows no uncommitted changes). If there are uncommitted changes, stop and ask the user to commit or stash them first.
-- Verify you are on the `master` branch. Warn if not.
 - Verify `npm whoami` succeeds (user is logged into npm).
+- Start from an up-to-date master and branch off it — **this repo never commits directly to `master`**, releases included:
+  ```
+  git fetch origin && git switch -c chore/release-{new_version} origin/master
+  ```
 
 ### 2. Version bump
 
@@ -26,25 +29,37 @@ If no argument is provided, ask the user which bump type they want (patch, minor
 - Run `npm run build` and verify it completes without errors.
 - If the build fails, stop and show the errors. Do not proceed with publishing.
 
-### 4. Publish to npm
+### 4. Open the release PR
 
-npm publish requires passkey authentication via browser. Do NOT run `npm publish` directly — it will fail waiting for interactive auth.
-
-Instead:
-- Tell the user to run `npm publish` themselves in their terminal.
-- Wait for the user to confirm it succeeded before continuing.
-
-### 5. Commit and tag
-
-Only proceed after the user confirms npm publish succeeded.
+The version bump lands on master through review like any other change.
 
 - Stage `package.json`, `package-lock.json`, and `server.json`.
 - Commit with message: `v{new_version}`
-- Create a git tag: `v{new_version}`
+- Push the branch and open a PR titled `v{new_version}` summarizing what ships in the release.
+- **Stop here and wait for the user to merge.** Do not merge it yourself.
 
-### 6. Push to GitHub
+### 5. Publish to npm
 
-- Run `git push && git push --tags`.
+Only proceed after the release PR is merged. Switch back to master and pull first,
+so the published artifact matches the merged tree:
+
+```
+git switch master && git fetch origin && git pull
+```
+
+npm publish requires passkey authentication via browser. Do NOT run `npm publish`
+directly — it will fail waiting for interactive auth.
+
+- Tell the user to run `npm publish` themselves in their terminal.
+- Wait for the user to confirm it succeeded before continuing.
+
+### 6. Tag the release
+
+Only proceed after the user confirms npm publish succeeded. The tag goes on the
+merge commit, not on the release branch.
+
+- Create a git tag: `git tag v{new_version}`
+- Push it: `git push --tags`
 
 ### 7. Publish to MCP Registry
 
