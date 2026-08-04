@@ -132,17 +132,14 @@ which is why this failed silently for so long.
 
 ### Real-world damage
 
-Two production sales receipts lost their customer this way (`Daily Sales`),
-each showing `SyncToken 1` — created correctly by the nightly importer, then
-cleared by a single subsequent line edit:
-
-| Doc | Id | TxnDate | Store |
-|-----|-----|---------|-------|
-| 7517 | 62299 | 2026-07-12 | 20395 |
-| 7522 | 62318 | 2026-07-13 | 20400 |
+This was found in the wild, not in review. Sales receipts created correctly by
+an automated importer lost their customer after a single later line edit —
+identifiable by `SyncToken 1` on a record whose customer is now empty while its
+siblings still have theirs.
 
 Only the customer link was lost; GL lines were untouched, so the P&L and balance
-sheet were unaffected.
+sheet were unaffected. That is what made it survive so long: nothing failed to
+balance, and no report errored — the link was simply gone.
 
 ### Rule for handlers
 
