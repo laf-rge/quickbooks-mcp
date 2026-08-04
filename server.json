@@ -6,12 +6,12 @@
     "url": "https://github.com/laf-rge/quickbooks-mcp",
     "source": "github"
   },
-  "version": "0.7.1",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "quickbooks-mcp",
-      "version": "0.7.1",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },

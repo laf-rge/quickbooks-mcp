@@ -148,6 +148,42 @@ can never be proven complete, and each omission is silent. Use `sparse: true`
 and send only what is changing, plus the entity's required-for-sparse fields
 below and a complete `Line` array when lines change.
 
+## Deposited Transactions Cannot Be Edited At All
+
+A sales receipt or payment that has been swept into a Deposit is frozen. Every
+update is rejected, sparse or full, even one touching a single header field:
+
+```json
+{
+  "Fault": {
+    "Error": [{
+      "Message": "Deposited Transaction cannot be changed",
+      "Detail": "This transaction has been deposited. If you want to change or delete it, you must edit the deposit it appears on and remove it first",
+      "code": "6540"
+    }],
+    "type": "ValidationFault"
+  }
+}
+```
+
+The transaction still reads back with `DepositToAccountRef` pointing at
+Undeposited Funds; the giveaway is a `LinkedTxn` entry of type `Deposit`:
+
+```json
+"LinkedTxn": [{ "TxnId": "123", "TxnType": "Deposit" }]
+```
+
+Check for that before attempting an edit, so the failure can be reported as a
+business-rule conflict rather than a generic HTTP 400.
+
+### Consequence for repairs
+
+Damage done to a transaction *before* it was deposited cannot be undone through
+the API afterwards. Undoing it means removing the transaction from its deposit,
+editing it, then putting it back — which changes a deposit that may already be
+reconciled against a bank statement. Weigh that against the size of the defect;
+a cosmetic field is rarely worth re-opening a completed reconciliation.
+
 ## Sparse Update Required Fields
 
 When performing sparse updates (`sparse: true`), certain fields are **required** beyond just `Id` and `SyncToken`, even though you're only updating a subset of the entity.
