@@ -375,32 +375,20 @@ export async function handleEditBill(
     ? await resolveVendor(client, vendor_name)
     : current.VendorRef;
 
-  // Determine if we're modifying lines - requires full update (not sparse)
-  const needsFullUpdate = lineChanges && lineChanges.length > 0;
-
-  // Build updated Bill
+  // Always sparse. A full update nulls every writable field absent from the
+  // payload (it dropped SalesTermRef here). Sparse also handles line changes,
+  // including deletion, provided the complete Line array is sent.
+  // See docs/quickbooks-api-limitations.md.
   // Note: VendorRef is required by QB API even for sparse updates
   const updated: Record<string, unknown> = {
     Id: current.Id,
     SyncToken: current.SyncToken,
     VendorRef: vendorRef,
+    sparse: true,
   };
 
-  // Only use sparse for non-line updates; full update needed for line modifications
-  // Note: node-quickbooks auto-sets sparse=true, so we must explicitly set sparse=false for full updates
-  if (!needsFullUpdate) {
-    updated.sparse = true;
-  } else {
-    // Full update: explicitly set sparse=false (node-quickbooks defaults to true)
-    updated.sparse = false;
-    updated.TxnDate = current.TxnDate;
-    updated.DueDate = current.DueDate;
-    updated.DocNumber = current.DocNumber;
-    updated.PrivateNote = current.PrivateNote;
-    if (current.DepartmentRef) {
-      updated.DepartmentRef = current.DepartmentRef;
-    }
-    // Copy lines and strip read-only fields
+  if (lineChanges && lineChanges.length > 0) {
+    // Seed with the existing lines, stripping read-only fields
     updated.Line = current.Line.map(line => {
       const { LineNum, ...rest } = line as Record<string, unknown>;
       return rest;

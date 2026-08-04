@@ -387,7 +387,7 @@ export async function handleEditInvoice(
   };
 
   // Determine if we're modifying lines - requires full update (not sparse)
-  const needsFullUpdate = lineChanges && lineChanges.length > 0;
+  const needsLineRebuild = lineChanges && lineChanges.length > 0;
 
   // Build updated Invoice
   const updated: Record<string, unknown> = {
@@ -395,36 +395,14 @@ export async function handleEditInvoice(
     SyncToken: current.SyncToken,
   };
 
-  if (!needsFullUpdate) {
-    updated.sparse = true;
-  } else {
-    updated.sparse = false;
-    updated.TxnDate = current.TxnDate;
-    updated.DueDate = current.DueDate;
-    updated.DocNumber = current.DocNumber;
-    updated.PrivateNote = current.PrivateNote;
-    if (current.CustomerRef) {
-      updated.CustomerRef = current.CustomerRef;
-    }
-    if (current.DepartmentRef) {
-      updated.DepartmentRef = current.DepartmentRef;
-    }
-    if (current.CustomerMemo) {
-      updated.CustomerMemo = current.CustomerMemo;
-    }
-    if (current.BillEmail) {
-      updated.BillEmail = current.BillEmail;
-    }
-    if (current.SalesTermRef) {
-      updated.SalesTermRef = current.SalesTermRef;
-    }
-    if (current.AllowOnlineCreditCardPayment !== undefined) {
-      updated.AllowOnlineCreditCardPayment = current.AllowOnlineCreditCardPayment;
-    }
-    if (current.AllowOnlineACHPayment !== undefined) {
-      updated.AllowOnlineACHPayment = current.AllowOnlineACHPayment;
-    }
-    // Copy lines and strip read-only fields
+  // Always sparse. A full update nulls every writable field absent from the
+  // payload, which is why this handler had grown a long copy list. Sparse also
+  // handles line changes, including deletion, provided the complete Line array
+  // is sent. See docs/quickbooks-api-limitations.md.
+  updated.sparse = true;
+
+  if (needsLineRebuild) {
+    // Seed with the existing lines, stripping read-only fields
     updated.Line = current.Line.map(line => {
       const { LineNum, ...rest } = line as Record<string, unknown>;
       return rest;

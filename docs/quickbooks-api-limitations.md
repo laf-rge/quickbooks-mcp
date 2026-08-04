@@ -72,6 +72,82 @@ From [Intuit's Data Queries documentation](https://developer.intuit.com/app/deve
 - **Max 1000 results**: Use `STARTPOSITION` for pagination
 - **Wildcard limited to %**: Only `LIKE '%pattern%'` supported, no other wildcards
 
+## Full Update Nulls Omitted Fields — Always Prefer Sparse
+
+This is the single most dangerous QBO update behaviour, and the root cause of a
+recurring class of silent data loss in this server. Intuit's own wording, from
+the "Full update" section of every transaction entity page:
+
+> The request body must include all writable fields of the existing object as
+> returned in a read response. **Writable fields omitted from the request body are
+> set to NULL.**
+
+Versus sparse update:
+
+> Sparse updating provides the ability to update a subset of properties for a
+> given object; only elements specified in the request are updated. **Missing
+> elements are left untouched.**
+
+`node-quickbooks` defaults to `sparse = true` (`index.js`, `module.update`), so a
+full update only happens when the caller *explicitly* sets `sparse: false`.
+
+### Sparse update handles line changes — including deletion
+
+Earlier handlers assumed line modifications required a full update. **That is
+false.** `Line` is an accepted attribute of the sparse update request body, and
+supplying a complete `Line` array replaces the entire array.
+
+Verified against the production company (2026-08-04) with a temporary
+SalesReceipt, since deleted:
+
+| Operation | `sparse: true` + full `Line` array | Result |
+|-----------|------------------------------------|--------|
+| Change line amounts | 2 lines, amounts `1/2` → `5/7` | applied; all header fields intact |
+| Delete a line | shortened array, 2 lines → 1 | line deleted; all header fields intact |
+
+So sparse update is strictly better: it does everything a full update does for
+lines, and cannot null a field you forgot to copy.
+
+### Which fields actually get nulled
+
+Not every omitted field is lost — QuickBooks re-derives some from company or
+vendor defaults. Verified in production by round-tripping temporary records
+through a full update built from the old whitelists:
+
+| Field | Full update result |
+|-------|--------------------|
+| `SalesReceipt.CustomerRef` | **LOST** — silently cleared |
+| `Purchase.Credit` | **LOST** — `true` → `false`, so a card refund becomes a charge |
+| `Bill.SalesTermRef` | **LOST** |
+| `Bill.APAccountRef` | survives (re-defaulted) |
+| `CurrencyRef`, `PrintStatus`, `EmailStatus`, `ApplyTaxAfterDiscount`, `CustomField` | survive (re-defaulted) |
+
+`Purchase.Credit` is the one with a dollar impact: dropping it flips the sign of
+a credit-card refund. Note `Credit` is only settable when
+`PaymentType` is `CreditCard`; QBO silently ignores it for `Cash`/`Check`.
+
+`SalesReceipt.CustomerRef` is nominally **required** per Intuit's docs, yet a
+full update omitting it is accepted and clears the field rather than erroring —
+which is why this failed silently for so long.
+
+### Real-world damage
+
+This was found in the wild, not in review. Sales receipts created correctly by
+an automated importer lost their customer after a single later line edit —
+identifiable by `SyncToken 1` on a record whose customer is now empty while its
+siblings still have theirs.
+
+Only the customer link was lost; GL lines were untouched, so the P&L and balance
+sheet were unaffected. That is what made it survive so long: nothing failed to
+balance, and no report errored — the link was simply gone.
+
+### Rule for handlers
+
+Do **not** hand-maintain a list of header fields to copy on update. A whitelist
+can never be proven complete, and each omission is silent. Use `sparse: true`
+and send only what is changing, plus the entity's required-for-sparse fields
+below and a complete `Line` array when lines change.
+
 ## Sparse Update Required Fields
 
 When performing sparse updates (`sparse: true`), certain fields are **required** beyond just `Id` and `SyncToken`, even though you're only updating a subset of the entity.
@@ -125,14 +201,18 @@ This means an expense transaction **cannot be split across multiple departments*
 
 3. **Separate Expenses**: Manually create individual expense records per department (loses the connection to the single bank/card transaction).
 
-### edit_expense Full Update Bug (Known)
+### edit_expense Full Update Bug (Historical)
 
-When `edit_expense` modifies lines, it performs a full update (`sparse: false`) but does **not** copy the following header-level fields from the original:
+`edit_expense` used to strip `DepartmentRef` and `EntityRef` on any line edit,
+because its full update did not copy them. Those two fields were added to the
+copy list in 190ea93, and the handler now uses a sparse update, so line edits no
+longer clear them.
 
-- `DepartmentRef` (location) — **gets stripped**
-- `EntityRef` (vendor/payee) — **gets stripped**
-
-This means any line edit on an expense will silently remove the department and vendor. Until this is fixed in the handler code, avoid using `edit_expense` for line modifications. Use JEs for reclassification instead.
+Kept here as the first known instance of the whitelist problem described in
+[Full Update Nulls Omitted Fields](#full-update-nulls-omitted-fields--always-prefer-sparse).
+It was patched by adding the two missing fields rather than by removing the
+whitelist, so the same bug resurfaced later on `SalesReceipt.CustomerRef`. Prefer
+sparse updates over extending a copy list.
 
 ## References
 
