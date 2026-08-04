@@ -695,7 +695,7 @@ export const toolDefinitions = [
   },
   {
     name: "edit_sales_receipt",
-    description: "Modify an existing sales receipt. Can update date, memo, deposit account, department, and/or lines. For lines: provide line_id to update existing line, omit line_id to add new line (requires item_name), set delete=true to remove.",
+    description: "Modify an existing sales receipt. Can update date, memo, customer, deposit account, department, and/or lines. For lines: provide line_id to update existing line, omit line_id to add new line (requires item_name), set delete=true to remove.",
     inputSchema: {
       type: "object",
       properties: {
@@ -710,6 +710,10 @@ export const toolDefinitions = [
         memo: {
           type: "string",
           description: "New private memo (optional)",
+        },
+        customer_name: {
+          type: "string",
+          description: "Customer name (auto-resolved to ID). Also used to restore a customer that was cleared by an earlier edit.",
         },
         deposit_to_account: {
           type: "string",

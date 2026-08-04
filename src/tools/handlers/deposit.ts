@@ -324,44 +324,21 @@ export async function handleEditDeposit(
     client.getDeposit(id, cb)
   ) as Deposit;
 
-  // Determine if we're replacing lines - requires full update (not sparse)
-  const needsFullUpdate = newLines && newLines.length > 0;
+  // Always sparse. A full update nulls every writable field absent from the
+  // payload. Sparse also handles line changes, including deletion, provided the
+  // complete Line array is sent. See docs/quickbooks-api-limitations.md.
+  const updated: Record<string, unknown> = {
+    Id: current.Id,
+    SyncToken: current.SyncToken,
+    sparse: true,
+  };
+  // DepositToAccountRef is required for sparse updates
+  if (current.DepositToAccountRef) {
+    updated.DepositToAccountRef = current.DepositToAccountRef;
+  }
 
-  // Build updated Deposit
-  let updated: Record<string, unknown>;
-
-  // Only use sparse for non-line updates; full update needed for line modifications
-  // Note: node-quickbooks auto-sets sparse=true, so we must explicitly set sparse=false for full updates
-  if (!needsFullUpdate) {
-    updated = {
-      Id: current.Id,
-      SyncToken: current.SyncToken,
-      sparse: true,
-    };
-    // DepositToAccountRef is required for sparse updates
-    if (current.DepositToAccountRef) {
-      updated.DepositToAccountRef = current.DepositToAccountRef;
-    }
-  } else {
-    // Full update: explicitly set sparse=false and copy only needed fields
-    // (same pattern as journal-entry.ts which works for line deletion)
-    updated = {
-      Id: current.Id,
-      SyncToken: current.SyncToken,
-      sparse: false,
-      TxnDate: current.TxnDate,
-      PrivateNote: current.PrivateNote,
-    };
-    if (current.DepositToAccountRef) {
-      updated.DepositToAccountRef = current.DepositToAccountRef;
-    }
-    if (current.DepartmentRef) {
-      updated.DepartmentRef = current.DepartmentRef;
-    }
-    if ((current as unknown as Record<string, unknown>).CurrencyRef) {
-      updated.CurrencyRef = (current as unknown as Record<string, unknown>).CurrencyRef;
-    }
-    // Copy lines and strip read-only fields
+  if (newLines && newLines.length > 0) {
+    // Seed with the existing lines, stripping read-only fields
     updated.Line = (current.Line || []).map(line => {
       const { LineNum, CustomExtensions, ...rest } = line as unknown as Record<string, unknown>;
       return rest;

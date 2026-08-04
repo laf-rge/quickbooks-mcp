@@ -330,7 +330,7 @@ export async function handleEditVendorCredit(
   };
 
   // Determine if we're modifying lines - requires full update (not sparse)
-  const needsFullUpdate = lineChanges && lineChanges.length > 0;
+  const needsLineRebuild = lineChanges && lineChanges.length > 0;
 
   // Build updated VendorCredit
   // Note: VendorRef is required by QB API even for sparse updates
@@ -342,17 +342,13 @@ export async function handleEditVendorCredit(
     VendorRef: vendorRef,
   };
 
-  if (!needsFullUpdate) {
-    updated.sparse = true;
-  } else {
-    updated.sparse = false;
-    updated.TxnDate = current.TxnDate;
-    updated.PrivateNote = current.PrivateNote;
-    updated.DocNumber = current.DocNumber;
-    if (current.DepartmentRef) {
-      updated.DepartmentRef = current.DepartmentRef;
-    }
-    // Copy lines and strip read-only fields
+  // Always sparse. A full update nulls every writable field absent from the
+  // payload. Sparse also handles line changes, including deletion, provided the
+  // complete Line array is sent. See docs/quickbooks-api-limitations.md.
+  updated.sparse = true;
+
+  if (needsLineRebuild) {
+    // Seed with the existing lines, stripping read-only fields
     updated.Line = current.Line.map(line => {
       const { LineNum, ...rest } = line as Record<string, unknown>;
       return rest;

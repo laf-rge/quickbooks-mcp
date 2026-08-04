@@ -325,8 +325,8 @@ export async function handleEditJournalEntry(
     }>;
   };
 
-  // Determine if we're modifying lines - requires full update (not sparse)
-  const needsFullUpdate = lineChanges && lineChanges.length > 0;
+  // Determine whether the Line array has to be rebuilt for this edit
+  const needsLineRebuild = lineChanges && lineChanges.length > 0;
 
   // Build updated JE
   const updated: Record<string, unknown> = {
@@ -334,17 +334,14 @@ export async function handleEditJournalEntry(
     SyncToken: current.SyncToken,
   };
 
-  // Only use sparse for non-line updates; full update needed for line modifications
-  // Note: node-quickbooks auto-sets sparse=true, so we must explicitly set sparse=false for full updates
-  if (!needsFullUpdate) {
-    updated.sparse = true;
-  } else {
-    // Full update: explicitly set sparse=false (node-quickbooks defaults to true)
-    updated.sparse = false;
-    updated.TxnDate = current.TxnDate;
-    updated.PrivateNote = current.PrivateNote;
-    updated.DocNumber = current.DocNumber;
-    // Copy lines and strip read-only fields
+  // Always sparse. A full update nulls every writable field absent from the
+  // payload (Adjustment here). Sparse also handles line changes, including
+  // deletion, provided the complete Line array is sent.
+  // See docs/quickbooks-api-limitations.md.
+  updated.sparse = true;
+
+  if (needsLineRebuild) {
+    // Seed with the existing lines, stripping read-only fields
     updated.Line = current.Line.map(line => {
       const { LineNum, ...rest } = line as Record<string, unknown>;
       return rest;
