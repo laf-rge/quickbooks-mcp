@@ -400,7 +400,7 @@ export const toolDefinitions = [
         },
         lines: {
           type: "array",
-          description: "Array of expense line items. Provide account_name OR account_id (name preferred).",
+          description: "Array of expense line items. Provide account_name OR account_id (name preferred). Optionally provide class_name OR class_id for per-line Class tracking.",
           items: {
             type: "object",
             properties: {
@@ -419,6 +419,14 @@ export const toolDefinitions = [
               description: {
                 type: "string",
                 description: "Line description (optional)",
+              },
+              class_name: {
+                type: "string",
+                description: "Class name for this line (e.g., '5614', 'Parent:Child'). Will be looked up to get ID. QBO Class tracking, distinct from header-level Department/Location.",
+              },
+              class_id: {
+                type: "string",
+                description: "Class ID (use if you already know it, otherwise use class_name)",
               },
             },
             required: ["amount"],
@@ -501,6 +509,14 @@ export const toolDefinitions = [
               description: {
                 type: "string",
                 description: "Line description",
+              },
+              class_name: {
+                type: "string",
+                description: "Class name for this line (e.g., '5614'), auto-resolved to ID. Sets/changes per-line QBO Class tracking. Existing class is preserved if omitted.",
+              },
+              class_id: {
+                type: "string",
+                description: "Class ID (use if you already know it, otherwise use class_name)",
               },
               delete: {
                 type: "boolean",

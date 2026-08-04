@@ -5,10 +5,12 @@ import { promisify } from "./promisify.js";
 import {
   CachedAccount,
   CachedCustomer,
+  CachedClass,
   CachedDepartment,
   CachedVendor,
   CachedItem,
   AccountCache,
+  ClassCache,
   DepartmentCache,
   VendorCache,
   QBQueryResponse,
@@ -19,6 +21,7 @@ const LOOKUP_CACHE_TTL_MS = 15 * 60 * 1000;
 
 // Module-level cache state
 let departmentCache: DepartmentCache | null = null;
+let classCache: ClassCache | null = null;
 let accountCache: AccountCache | null = null;
 let vendorCache: VendorCache | null = null;
 // Item cache: lazy per-entry lookup (not bulk-loaded like others)
@@ -30,6 +33,7 @@ const customerCacheByName = new Map<string, CachedCustomer>(); // lowercase key
 
 export function clearLookupCache(): void {
   departmentCache = null;
+  classCache = null;
   accountCache = null;
   vendorCache = null;
   itemCacheById.clear();
@@ -62,6 +66,30 @@ export async function getDepartmentCache(client: QuickBooks): Promise<Department
 
   departmentCache = { items, byId, byName, fetchedAt: Date.now() };
   return departmentCache;
+}
+
+export async function getClassCache(client: QuickBooks): Promise<ClassCache> {
+  if (classCache && (Date.now() - classCache.fetchedAt) < LOOKUP_CACHE_TTL_MS) {
+    return classCache;
+  }
+
+  const result = await promisify<unknown>((cb) => client.findClasses({ fetchAll: true }, cb));
+  const items = extractQueryResults<CachedClass>(result, 'Class');
+
+  const byId = new Map<string, CachedClass>();
+  const byName = new Map<string, CachedClass>();
+  for (const cls of items) {
+    byId.set(cls.Id, cls);
+    // Index by both the leaf Name and the FullyQualifiedName ("Parent:Child") so
+    // nested classes resolve by either form.
+    byName.set(cls.Name.toLowerCase(), cls);
+    if (cls.FullyQualifiedName) {
+      byName.set(cls.FullyQualifiedName.toLowerCase(), cls);
+    }
+  }
+
+  classCache = { items, byId, byName, fetchedAt: Date.now() };
+  return classCache;
 }
 
 export async function getAccountCache(client: QuickBooks): Promise<AccountCache> {

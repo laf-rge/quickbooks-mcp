@@ -12,6 +12,7 @@ export { withRetry, isRetryableError } from './throttle.js';
 export {
   clearLookupCache,
   getDepartmentCache,
+  getClassCache,
   getAccountCache,
   getVendorCache,
   resolveAccount,
