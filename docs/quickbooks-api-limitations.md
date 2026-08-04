@@ -170,7 +170,7 @@ The transaction still reads back with `DepositToAccountRef` pointing at
 Undeposited Funds; the giveaway is a `LinkedTxn` entry of type `Deposit`:
 
 ```json
-"LinkedTxn": [{ "TxnId": "62910", "TxnType": "Deposit" }]
+"LinkedTxn": [{ "TxnId": "123", "TxnType": "Deposit" }]
 ```
 
 Check for that before attempting an edit, so the failure can be reported as a
