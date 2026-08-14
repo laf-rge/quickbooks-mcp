@@ -6,6 +6,9 @@ import {
   getAccountCache,
   getDepartmentCache,
   getVendorCache,
+  resolveAccountRef,
+  resolveVendorRef,
+  toQboRef,
 } from "../../client/index.js";
 import { buildQboUrl, validateAmount, toDollars, formatDollars, toCents, sumCents, outputReport } from "../../utils/index.js";
 import type { AccountCache, DepartmentCache, VendorCache } from "../../types/index.js";
@@ -59,17 +62,10 @@ interface Deposit {
 
 // --- Shared resolution helpers ---
 
-function resolveAccountRef(
-  acctCache: AccountCache,
-  name: string
-): { value: string; name: string } {
-  let match = acctCache.byAcctNum.get(name.toLowerCase());
-  if (!match) match = acctCache.byName.get(name.toLowerCase());
-  if (!match) match = acctCache.items.find(a =>
-    a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase())
-  );
-  if (!match) throw new Error(`Account not found: "${name}"`);
-  return { value: match.Id, name: match.FullyQualifiedName || match.Name };
+// Deposit lines carry the ref straight into the payload, so narrow away the
+// resolver's acctNum.
+function accountRefFor(acctCache: AccountCache, name: string): { value: string; name: string } {
+  return toQboRef(resolveAccountRef(acctCache, name));
 }
 
 function resolveDepartmentRef(
@@ -87,22 +83,13 @@ function resolveDepartmentRef(
   return { value: match.Id, name: match.FullyQualifiedName || match.Name };
 }
 
+// Deposit lines want the uppercase "VENDOR" entity type, unlike Purchase's
+// "Vendor".
 function resolveEntityRef(
   vendorCache: VendorCache,
   nameOrId: string
 ): { value: string; name: string; type: string } {
-  const byId = vendorCache.byId.get(nameOrId);
-  if (byId) return { value: byId.Id, name: byId.DisplayName, type: "VENDOR" };
-
-  const byName = vendorCache.byName.get(nameOrId.toLowerCase());
-  if (byName) return { value: byName.Id, name: byName.DisplayName, type: "VENDOR" };
-
-  const byPartial = vendorCache.items.find(v =>
-    v.DisplayName.toLowerCase().includes(nameOrId.toLowerCase())
-  );
-  if (byPartial) return { value: byPartial.Id, name: byPartial.DisplayName, type: "VENDOR" };
-
-  throw new Error(`Vendor not found: "${nameOrId}"`);
+  return { ...resolveVendorRef(vendorCache, nameOrId), type: "VENDOR" };
 }
 
 // --- Handlers ---
@@ -136,7 +123,7 @@ export async function handleCreateDeposit(
   ]);
 
   // Resolve deposit_to_account
-  const depositToRef = resolveAccountRef(acctCache, deposit_to_account);
+  const depositToRef = accountRefFor(acctCache, deposit_to_account);
 
   // Resolve header-level department
   let departmentRef: { value: string; name: string } | undefined;
@@ -159,7 +146,7 @@ export async function handleCreateDeposit(
         throw new Error(`${label}: Account ID not found: "${line.account_id}"`);
       }
     } else if (line.account_name) {
-      accountRef = resolveAccountRef(acctCache, line.account_name);
+      accountRef = accountRefFor(acctCache, line.account_name);
     } else {
       throw new Error(`${label}: Either account_name or account_id is required`);
     }
@@ -359,7 +346,7 @@ export async function handleEditDeposit(
 
   // Resolve deposit_to_account if provided
   if (deposit_to_account !== undefined) {
-    const ref = resolveAccountRef(acctCache!, deposit_to_account);
+    const ref = accountRefFor(acctCache!, deposit_to_account);
     updated.DepositToAccountRef = ref;
   }
 
@@ -401,7 +388,7 @@ export async function handleEditDeposit(
         line.Amount = toDollars(amountCents);
         line.DepositLineDetail = {
           ...line.DepositLineDetail,
-          AccountRef: resolveAccountRef(acctCache!, input.account_name),
+          AccountRef: accountRefFor(acctCache!, input.account_name),
         };
       } else {
         // Create new line
@@ -409,7 +396,7 @@ export async function handleEditDeposit(
           Amount: toDollars(amountCents),
           DetailType: 'DepositLineDetail',
           DepositLineDetail: {
-            AccountRef: resolveAccountRef(acctCache!, input.account_name),
+            AccountRef: accountRefFor(acctCache!, input.account_name),
           },
         };
       }
