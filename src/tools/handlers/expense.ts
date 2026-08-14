@@ -7,7 +7,7 @@ import {
   getDepartmentCache,
   getVendorCache,
 } from "../../client/index.js";
-import { validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
 interface CreateExpenseLine {
   account_id?: string;
@@ -208,7 +208,7 @@ export async function handleCreateExpense(
     client.createPurchase(purchaseObject, cb)
   ) as { Id: string; DocNumber?: string };
 
-  const qboUrl = `https://app.qbo.intuit.com/app/expense?txnId=${result.Id}`;
+  const qboUrl = buildQboUrl("expense", "txnId", result.Id);
 
   const response = [
     "Expense Created!",
@@ -263,7 +263,7 @@ export async function handleGetExpense(
       };
     }>;
   };
-  const qboUrl = `https://app.qbo.intuit.com/app/expense?txnId=${expense.Id}`;
+  const qboUrl = buildQboUrl("expense", "txnId", expense.Id);
 
   // Format summary
   const lines: string[] = [
@@ -489,7 +489,7 @@ export async function handleEditExpense(
     updated.Line = finalLines;
   }
 
-  const qboUrl = `https://app.qbo.intuit.com/app/expense?txnId=${id}`;
+  const qboUrl = buildQboUrl("expense", "txnId", id);
 
   if (draft) {
     const previewLines: string[] = [

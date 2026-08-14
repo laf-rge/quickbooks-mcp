@@ -7,6 +7,7 @@ import {
   getDepartmentCache,
 } from "../../client/index.js";
 import {
+  buildQboUrl,
   validateAmount,
   sumCents,
   validateBalance,
@@ -210,7 +211,7 @@ export async function handleCreateJournalEntry(
   ) as { Id: string; DocNumber?: string };
 
   // Build QuickBooks URL
-  const qboUrl = `https://app.qbo.intuit.com/app/journal?txnId=${result.Id}`;
+  const qboUrl = buildQboUrl("journal", "txnId", result.Id);
 
   const response = [
     "Journal Entry Created!",
@@ -254,7 +255,7 @@ export async function handleGetJournalEntry(
       };
     }>;
   };
-  const qboUrl = `https://app.qbo.intuit.com/app/journal?txnId=${je.Id}`;
+  const qboUrl = buildQboUrl("journal", "txnId", je.Id);
 
   // Format summary
   const lines: string[] = [
@@ -454,7 +455,7 @@ export async function handleEditJournalEntry(
     validateBalance(totalDebitsCents, totalCreditsCents);
   }
 
-  const qboUrl = `https://app.qbo.intuit.com/app/journal?txnId=${id}`;
+  const qboUrl = buildQboUrl("journal", "txnId", id);
 
   if (draft) {
     // Preview mode
