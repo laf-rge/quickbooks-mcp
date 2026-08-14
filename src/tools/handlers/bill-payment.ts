@@ -74,8 +74,17 @@ export async function handleCreateBillPayment(
     throw new Error("Either vendor_name or vendor_id is required");
   }
 
-  // Resolve bank account
-  const bankAccountRef = toQboRef(resolveAccountRef(acctCache, payment_account));
+  // Resolve bank account. Restricted to Bank-type: this tool moves money, and an
+  // unrestricted partial match can land on an account that merely shares digits or
+  // words with the intended one (on this chart of accounts "Payroll" resolves to
+  // an accrued-wages liability, not the payroll checking account). A Check-type
+  // BillPayment requires a Bank account anyway.
+  const bankAccountRef = toQboRef(
+    resolveAccountRef(acctCache, payment_account, {
+      label: "Payment account",
+      accountType: "Bank",
+    })
+  );
 
   // Fetch each bill: validates it exists, belongs to the vendor, and supplies
   // the open balance as the default amount to apply.
