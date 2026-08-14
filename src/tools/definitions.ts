@@ -388,7 +388,7 @@ export const toolDefinitions = [
         },
         ap_account: {
           type: "string",
-          description: "Accounts Payable account name or number (optional, defaults to standard AP)",
+          description: "Accounts Payable account name or number (optional, defaults to standard AP). Only Accounts Payable-type accounts are matched.",
         },
         memo: {
           type: "string",
@@ -1255,7 +1255,7 @@ export const toolDefinitions = [
         },
         ap_account: {
           type: "string",
-          description: "Accounts Payable account name or number (optional, defaults to standard AP)",
+          description: "Accounts Payable account name or number (optional, defaults to standard AP). Only Accounts Payable-type accounts are matched.",
         },
         memo: {
           type: "string",
@@ -1392,7 +1392,7 @@ export const toolDefinitions = [
         },
         payment_account: {
           type: "string",
-          description: "Bank account name or number the payment is drawn from (e.g., 'PLAT BUS CHECKING', '5752'). Will be looked up to get ID.",
+          description: "Bank account name or number the payment is drawn from (e.g., 'PLAT BUS CHECKING', '5752'). Only Bank-type accounts are matched, so a partial name cannot resolve to an expense or liability account.",
         },
         txn_date: {
           type: "string",

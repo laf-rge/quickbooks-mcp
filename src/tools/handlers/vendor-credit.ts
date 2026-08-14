@@ -96,7 +96,11 @@ export async function handleCreateVendorCredit(
   // Resolve AP account if specified
   let apAccountRef: { value: string; name: string } | undefined;
   if (ap_account) {
-    const acct = resolveAccountRef(acctCache, ap_account);
+    // Same A/P restriction as create_bill — the field feeds the same QBO ref.
+    const acct = resolveAccountRef(acctCache, ap_account, {
+      label: "A/P account",
+      accountType: "Accounts Payable",
+    });
     apAccountRef = { value: acct.value, name: acct.name };
   }
 
