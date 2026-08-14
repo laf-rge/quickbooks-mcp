@@ -8,6 +8,9 @@ import {
   getDepartmentCache,
   getVendorCache,
   resolveVendor,
+  resolveAccountRef,
+  resolveVendorRef,
+  toQboRef,
 } from "../../client/index.js";
 import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
@@ -78,40 +81,14 @@ export async function handleCreateBill(
   };
 
   // Resolve vendor
-  const resolveVendorRef = (nameOrId: string): { value: string; name: string } => {
-    const byId = vendorCacheData.byId.get(nameOrId);
-    if (byId) return { value: byId.Id, name: byId.DisplayName };
-
-    const byName = vendorCacheData.byName.get(nameOrId.toLowerCase());
-    if (byName) return { value: byName.Id, name: byName.DisplayName };
-
-    const byPartial = vendorCacheData.items.find(v =>
-      v.DisplayName.toLowerCase().includes(nameOrId.toLowerCase())
-    );
-    if (byPartial) return { value: byPartial.Id, name: byPartial.DisplayName };
-
-    throw new Error(`Vendor not found: "${nameOrId}"`);
-  };
-
   let vendorRef: { value: string; name: string };
   if (vendor_id) {
-    vendorRef = resolveVendorRef(vendor_id);
+    vendorRef = resolveVendorRef(vendorCacheData, vendor_id);
   } else if (vendor_name) {
-    vendorRef = resolveVendorRef(vendor_name);
+    vendorRef = resolveVendorRef(vendorCacheData, vendor_name);
   } else {
     throw new Error("Either vendor_name or vendor_id is required");
   }
-
-  // Resolve account refs
-  const lookupAccount = (name: string): { id: string; name: string; acctNum?: string } => {
-    let match = acctCache.byAcctNum.get(name.toLowerCase());
-    if (!match) match = acctCache.byName.get(name.toLowerCase());
-    if (!match) match = acctCache.items.find(a =>
-      a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase())
-    );
-    if (match) return { id: match.Id, name: match.FullyQualifiedName || match.Name, acctNum: match.AcctNum };
-    throw new Error(`Account not found: "${name}"`);
-  };
 
   // Resolve department (header-level)
   let departmentRef: { value: string; name: string } | undefined;
@@ -140,8 +117,8 @@ export async function handleCreateBill(
   // Resolve AP account if specified
   let apAccountRef: { value: string; name: string } | undefined;
   if (ap_account) {
-    const acct = lookupAccount(ap_account);
-    apAccountRef = { value: acct.id, name: acct.name };
+    const acct = resolveAccountRef(acctCache, ap_account);
+    apAccountRef = { value: acct.value, name: acct.name };
   }
 
   // Resolve lines
@@ -151,8 +128,8 @@ export async function handleCreateBill(
     let accountNum: string | undefined;
 
     if (!accountId && accountName) {
-      const account = lookupAccount(accountName);
-      accountId = account.id;
+      const account = resolveAccountRef(acctCache, accountName);
+      accountId = account.value;
       accountName = account.name;
       accountNum = account.acctNum;
     } else if (!accountId && !accountName) {
@@ -421,15 +398,7 @@ export async function handleEditBill(
       getClassCache(client),
     ]);
 
-    const resolveAcct = (name: string) => {
-      let match = acctCache.byAcctNum.get(name.toLowerCase());
-      if (!match) match = acctCache.byName.get(name.toLowerCase());
-      if (!match) match = acctCache.items.find(a =>
-        a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase())
-      );
-      if (!match) throw new Error(`Account not found: "${name}"`);
-      return { value: match.Id, name: match.FullyQualifiedName || match.Name };
-    };
+    const resolveAcct = (name: string) => toQboRef(resolveAccountRef(acctCache, name));
 
     const resolveClassRef = (nameOrId: string) => {
       const byId = classCacheData.byId.get(nameOrId);

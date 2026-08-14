@@ -7,6 +7,8 @@ import {
   getDepartmentCache,
   resolveItem,
   resolveCustomer,
+  resolveAccountRef,
+  toQboRef,
 } from "../../client/index.js";
 import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
@@ -67,13 +69,9 @@ export async function handleCreateSalesReceipt(
   let depositAccountRef: { value: string; name: string } | undefined;
   if (deposit_to_account) {
     const acctCache = await getAccountCache(client);
-    let match = acctCache.byAcctNum.get(deposit_to_account.toLowerCase());
-    if (!match) match = acctCache.byName.get(deposit_to_account.toLowerCase());
-    if (!match) match = acctCache.items.find(a =>
-      a.FullyQualifiedName?.toLowerCase().includes(deposit_to_account.toLowerCase())
+    depositAccountRef = toQboRef(
+      resolveAccountRef(acctCache, deposit_to_account, { label: "Deposit account" })
     );
-    if (!match) throw new Error(`Deposit account not found: "${deposit_to_account}"`);
-    depositAccountRef = { value: match.Id, name: match.FullyQualifiedName || match.Name };
   }
 
   // Resolve department (header-level, optional)
@@ -352,13 +350,9 @@ export async function handleEditSalesReceipt(
   if (deposit_to_account !== undefined) {
     const { getAccountCache } = await import("../../client/index.js");
     const acctCache = await getAccountCache(client);
-    let match = acctCache.byAcctNum.get(deposit_to_account.toLowerCase());
-    if (!match) match = acctCache.byName.get(deposit_to_account.toLowerCase());
-    if (!match) match = acctCache.items.find(a =>
-      a.FullyQualifiedName?.toLowerCase().includes(deposit_to_account.toLowerCase())
+    updated.DepositToAccountRef = toQboRef(
+      resolveAccountRef(acctCache, deposit_to_account, { label: "Deposit account" })
     );
-    if (!match) throw new Error(`Deposit account not found: "${deposit_to_account}"`);
-    updated.DepositToAccountRef = { value: match.Id, name: match.FullyQualifiedName || match.Name };
   }
 
   // Resolve header-level department if provided

@@ -22,3 +22,13 @@ export {
   resolveDepartmentId,
   collectAccountTree,
 } from './cache.js';
+export {
+  resolveAccountRef,
+  resolveVendorRef,
+  toQboRef,
+} from './refs.js';
+export type {
+  AccountRef,
+  VendorRef,
+  ResolveAccountOptions,
+} from './refs.js';

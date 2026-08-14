@@ -6,6 +6,9 @@ import {
   getAccountCache,
   getDepartmentCache,
   getVendorCache,
+  resolveAccountRef,
+  resolveVendorRef,
+  toQboRef,
 } from "../../client/index.js";
 import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
@@ -58,42 +61,15 @@ export async function handleCreateExpense(
     getVendorCache(client),
   ]);
 
-  // Resolve payment account
-  const lookupAccount = (name: string): { id: string; name: string; acctNum?: string } => {
-    let match = acctCache.byAcctNum.get(name.toLowerCase());
-    if (!match) match = acctCache.byName.get(name.toLowerCase());
-    if (!match) match = acctCache.items.find(a =>
-      a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase())
-    );
-    if (match) return { id: match.Id, name: match.FullyQualifiedName || match.Name, acctNum: match.AcctNum };
-    throw new Error(`Account not found: "${name}"`);
-  };
-
-  const paymentAcct = lookupAccount(payment_account);
-  const paymentAccountRef = { value: paymentAcct.id, name: paymentAcct.name };
+  // Resolve payment account (acctNum is kept for the draft preview)
+  const paymentAcct = resolveAccountRef(acctCache, payment_account);
+  const paymentAccountRef = toQboRef(paymentAcct);
 
   // Resolve vendor/entity (optional)
   let entityRef: { value: string; name: string; type: string } | undefined;
   const entityInput = entity_id || entity_name;
   if (entityInput) {
-    const byId = vendorCacheData.byId.get(entityInput);
-    if (byId) {
-      entityRef = { value: byId.Id, name: byId.DisplayName, type: "Vendor" };
-    } else {
-      const byName = vendorCacheData.byName.get(entityInput.toLowerCase());
-      if (byName) {
-        entityRef = { value: byName.Id, name: byName.DisplayName, type: "Vendor" };
-      } else {
-        const byPartial = vendorCacheData.items.find(v =>
-          v.DisplayName.toLowerCase().includes(entityInput.toLowerCase())
-        );
-        if (byPartial) {
-          entityRef = { value: byPartial.Id, name: byPartial.DisplayName, type: "Vendor" };
-        } else {
-          throw new Error(`Vendor not found: "${entityInput}"`);
-        }
-      }
-    }
+    entityRef = { ...resolveVendorRef(vendorCacheData, entityInput), type: "Vendor" };
   }
 
   // Resolve department (header-level, optional)
@@ -127,8 +103,8 @@ export async function handleCreateExpense(
     let accountNum: string | undefined;
 
     if (!accountId && accountName) {
-      const account = lookupAccount(accountName);
-      accountId = account.id;
+      const account = resolveAccountRef(acctCache, accountName);
+      accountId = account.value;
       accountName = account.name;
       accountNum = account.acctNum;
     } else if (!accountId && !accountName) {
@@ -377,13 +353,9 @@ export async function handleEditExpense(
   // Resolve payment account if provided
   if (payment_account !== undefined) {
     const acctCache = await getAccountCache(client);
-    let match = acctCache.byAcctNum.get(payment_account.toLowerCase());
-    if (!match) match = acctCache.byName.get(payment_account.toLowerCase());
-    if (!match) match = acctCache.items.find(a =>
-      a.FullyQualifiedName?.toLowerCase().includes(payment_account.toLowerCase())
+    updated.AccountRef = toQboRef(
+      resolveAccountRef(acctCache, payment_account, { label: "Payment account" })
     );
-    if (!match) throw new Error(`Payment account not found: "${payment_account}"`);
-    updated.AccountRef = { value: match.Id, name: match.FullyQualifiedName || match.Name };
   }
 
   // Resolve header-level department if provided
@@ -401,24 +373,7 @@ export async function handleEditExpense(
   const entityInput = entity_id || entity_name;
   if (entityInput) {
     const vendorCacheData = await getVendorCache(client);
-    const byId = vendorCacheData.byId.get(entityInput);
-    if (byId) {
-      updated.EntityRef = { value: byId.Id, name: byId.DisplayName, type: "Vendor" };
-    } else {
-      const byName = vendorCacheData.byName.get(entityInput.toLowerCase());
-      if (byName) {
-        updated.EntityRef = { value: byName.Id, name: byName.DisplayName, type: "Vendor" };
-      } else {
-        const byPartial = vendorCacheData.items.find(v =>
-          v.DisplayName.toLowerCase().includes(entityInput.toLowerCase())
-        );
-        if (byPartial) {
-          updated.EntityRef = { value: byPartial.Id, name: byPartial.DisplayName, type: "Vendor" };
-        } else {
-          throw new Error(`Vendor not found: "${entityInput}"`);
-        }
-      }
-    }
+    updated.EntityRef = { ...resolveVendorRef(vendorCacheData, entityInput), type: "Vendor" };
   }
 
   // Process line changes if provided
@@ -428,15 +383,7 @@ export async function handleEditExpense(
   if (lineChanges && lineChanges.length > 0) {
     const acctCache = await getAccountCache(client);
 
-    const resolveAcct = (name: string) => {
-      let match = acctCache.byAcctNum.get(name.toLowerCase());
-      if (!match) match = acctCache.byName.get(name.toLowerCase());
-      if (!match) match = acctCache.items.find(a =>
-        a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase())
-      );
-      if (!match) throw new Error(`Account not found: "${name}"`);
-      return { value: match.Id, name: match.FullyQualifiedName || match.Name };
-    };
+    const resolveAcct = (name: string) => toQboRef(resolveAccountRef(acctCache, name));
 
     for (const change of lineChanges) {
       if (change.line_id) {

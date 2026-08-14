@@ -5,6 +5,8 @@ import {
   promisify,
   getAccountCache,
   getDepartmentCache,
+  resolveAccountRef,
+  toQboRef,
 } from "../../client/index.js";
 import {
   buildQboUrl,
@@ -57,30 +59,6 @@ export async function handleCreateJournalEntry(
     getDepartmentCache(client)
   ]);
 
-  // Helper to lookup account by name or AcctNum from cache
-  const lookupAccount = (name: string): { id: string; name: string; acctNum?: string } => {
-    // Try exact AcctNum match (case-insensitive)
-    let match = acctCache.byAcctNum.get(name.toLowerCase());
-
-    // Try exact name match (case-insensitive)
-    if (!match) {
-      match = acctCache.byName.get(name.toLowerCase());
-    }
-
-    // Try partial match on FullyQualifiedName
-    if (!match) {
-      match = acctCache.items.find(a =>
-        a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase()) ||
-        a.FullyQualifiedName?.toLowerCase() === name.toLowerCase()
-      );
-    }
-
-    if (match) {
-      return { id: match.Id, name: match.FullyQualifiedName || match.Name, acctNum: match.AcctNum };
-    }
-    throw new Error(`Account not found: "${name}"`);
-  };
-
   // Helper to lookup department by name from cache
   const lookupDepartment = (name: string): { id: string; name: string } => {
     // Try exact name match (case-insensitive)
@@ -109,8 +87,8 @@ export async function handleCreateJournalEntry(
 
     // Resolve account
     if (!accountId && accountName) {
-      const account = lookupAccount(accountName);
-      accountId = account.id;
+      const account = resolveAccountRef(acctCache, accountName);
+      accountId = account.value;
       accountName = account.name;
       accountNum = account.acctNum;
     } else if (!accountId && !accountName) {
@@ -366,15 +344,7 @@ export async function handleEditJournalEntry(
     ]);
 
     // Helper to resolve account
-    const resolveAcct = (name: string) => {
-      let match = acctCache.byAcctNum.get(name.toLowerCase());
-      if (!match) match = acctCache.byName.get(name.toLowerCase());
-      if (!match) match = acctCache.items.find(a =>
-        a.FullyQualifiedName?.toLowerCase().includes(name.toLowerCase())
-      );
-      if (!match) throw new Error(`Account not found: "${name}"`);
-      return { value: match.Id, name: match.FullyQualifiedName || match.Name };
-    };
+    const resolveAcct = (name: string) => toQboRef(resolveAccountRef(acctCache, name));
 
     // Helper to resolve department
     const resolveDept = (name: string) => {
