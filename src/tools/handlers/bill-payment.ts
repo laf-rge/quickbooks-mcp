@@ -11,7 +11,7 @@ import {
   getAccountCache,
   getVendorCache,
 } from "../../client/index.js";
-import { validateAmount, toCents, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toCents, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
 interface BillPaymentBillInput {
   bill_id: string;
@@ -234,7 +234,7 @@ export async function handleCreateBillPayment(
     client.createBillPayment(bpObject, cb)
   ) as { Id: string; DocNumber?: string };
 
-  const qboUrl = `https://app.qbo.intuit.com/app/billpayment?txnId=${result.Id}`;
+  const qboUrl = buildQboUrl("billpayment", "txnId", result.Id);
 
   const response = [
     "Bill Payment Created!",
@@ -281,7 +281,7 @@ export async function handleGetBillPayment(
       LinkedTxn?: Array<{ TxnId: string; TxnType: string }>;
     }>;
   };
-  const qboUrl = `https://app.qbo.intuit.com/app/billpayment?txnId=${bp.Id}`;
+  const qboUrl = buildQboUrl("billpayment", "txnId", bp.Id);
 
   const payAcct = bp.CheckPayment?.BankAccountRef || bp.CreditCardPayment?.CCAccountRef;
 

@@ -7,7 +7,7 @@ import {
   getDepartmentCache,
   getVendorCache,
 } from "../../client/index.js";
-import { validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
 interface CreateVendorCreditLine {
   account_id?: string;
@@ -210,7 +210,7 @@ export async function handleCreateVendorCredit(
     client.createVendorCredit(vcObject, cb)
   ) as { Id: string; DocNumber?: string };
 
-  const qboUrl = `https://app.qbo.intuit.com/app/vendorcredit?txnId=${result.Id}`;
+  const qboUrl = buildQboUrl("vendorcredit", "txnId", result.Id);
 
   const response = [
     "Vendor Credit Created!",
@@ -257,7 +257,7 @@ export async function handleGetVendorCredit(
       };
     }>;
   };
-  const qboUrl = `https://app.qbo.intuit.com/app/vendorcredit?txnId=${vc.Id}`;
+  const qboUrl = buildQboUrl("vendorcredit", "txnId", vc.Id);
 
   // Format summary
   const lines: string[] = [
@@ -443,7 +443,7 @@ export async function handleEditVendorCredit(
     updated.Line = finalLines;
   }
 
-  const qboUrl = `https://app.qbo.intuit.com/app/vendorcredit?txnId=${id}`;
+  const qboUrl = buildQboUrl("vendorcredit", "txnId", id);
 
   if (draft) {
     const previewLines: string[] = [
