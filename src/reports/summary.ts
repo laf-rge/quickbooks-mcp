@@ -1,8 +1,161 @@
 // Report summary extraction utilities
 
-import { QBReport } from "../types/index.js";
+import { QBReport, QBReportRow, QBReportColData } from "../types/index.js";
 
-export function extractReportSummary(report: QBReport, reportType: string): string {
+export interface ReportSummaryOptions {
+  // Render individual account rows beneath each section total. Off by default so
+  // the compact section summary stays the default output for every report.
+  detail?: boolean;
+}
+
+// Section groups in the order QBO reports them. OtherExpenses/NetOtherIncome sit
+// between operating income and net income; omitting them used to leave an
+// unexplained gap between "Net Operating Income" and "Net Income".
+const PL_GROUP_ORDER = [
+  "Income",
+  "COGS",
+  "GrossProfit",
+  "Expenses",
+  "NetOperatingIncome",
+  "OtherIncome",
+  "OtherExpenses",
+  "NetOtherIncome",
+  "NetIncome",
+];
+
+const BALANCE_SHEET_GROUP_ORDER = ["TotalAssets", "TotalLiabilitiesAndEquity"];
+
+const GROUP_LABELS: Record<string, string> = {
+  Income: "Total Income",
+  COGS: "Total Cost of Goods Sold",
+  GrossProfit: "Gross Profit",
+  Expenses: "Total Expenses",
+  NetOperatingIncome: "Net Operating Income",
+  OtherIncome: "Total Other Income",
+  OtherExpenses: "Total Other Expenses",
+  NetOtherIncome: "Net Other Income",
+  NetIncome: "Net Income",
+  TotalAssets: "Total Assets",
+  TotalLiabilitiesAndEquity: "Total Liabilities and Equity",
+};
+
+function labelOf(cols: QBReportColData[] | undefined): string {
+  return cols?.[0]?.value?.trim() || "";
+}
+
+// A report summarized by department/class has one column per member plus a
+// trailing total; a plain report has a single value column. Either way the
+// rightmost column is the one worth showing on a single line.
+function pickValue(cols: QBReportColData[] | undefined, multiColumn: boolean): string | null {
+  const values = (cols ?? []).slice(1).map(c => c.value || "0");
+  if (values.length === 0) return null;
+  return multiColumn ? values[values.length - 1] : values[0];
+}
+
+// Walk a section's children, emitting leaf account rows and nested subtotals.
+function renderDetail(
+  rows: QBReportRow[],
+  multiColumn: boolean,
+  depth: number,
+  out: string[]
+): void {
+  const pad = "  ".repeat(depth);
+  for (const row of rows) {
+    const nested = row.Rows?.Row;
+    if (nested && nested.length > 0) {
+      const header = labelOf(row.Header?.ColData);
+      if (header) out.push(`${pad}${header}`);
+      renderDetail(nested, multiColumn, depth + 1, out);
+      const subtotal = pickValue(row.Summary?.ColData, multiColumn);
+      const subtotalLabel = labelOf(row.Summary?.ColData);
+      if (subtotal !== null && subtotalLabel) {
+        out.push(`${pad}  ${subtotalLabel}: ${subtotal}`);
+      }
+      continue;
+    }
+
+    // Leaf: an account row carries its name and value in ColData. A row with no
+    // value cell at all still gets listed — dropping it would silently remove an
+    // account from a report whose purpose is completeness.
+    const name = labelOf(row.ColData);
+    if (name) out.push(`${pad}${name}: ${pickValue(row.ColData, multiColumn) ?? "0"}`);
+  }
+}
+
+const NAME_WIDTH_CAP = 60;
+
+// Fit an account name to the column without losing what identifies it. QBO
+// reports the full path ("1984 Other Assets:Security Deposits Corporate:Security
+// Deposits 20400 N. Santa Rosa"), where the leading account number and the
+// trailing leaf both carry meaning and the middle is the expendable part — so
+// drop the interior path segments before falling back to a blunt elide.
+export function elideAccountName(name: string, cap = NAME_WIDTH_CAP): string {
+  if (name.length <= cap) return name;
+
+  const parts = name.split(":");
+  if (parts.length > 2) {
+    const collapsed = `${parts[0]}:…:${parts[parts.length - 1]}`;
+    if (collapsed.length <= cap) return collapsed;
+  }
+
+  // Still too long (or no path to collapse): keep the head, which carries the
+  // account number, and the tail, which distinguishes siblings.
+  const tail = Math.floor((cap - 1) / 2);
+  const head = cap - 1 - tail;
+  return `${name.slice(0, head)}…${name.slice(name.length - tail)}`;
+}
+
+// Trial Balance has no Section grouping — every account is a bare ColData row of
+// [account, debit, credit], closed by a single GrandTotal section. The
+// section-based path finds nothing here, which is why it rendered no numbers.
+function renderTrialBalance(rows: QBReportRow[], out: string[]): void {
+  const entries: Array<{ name: string; debit: string; credit: string }> = [];
+  let total: QBReportColData[] | undefined;
+
+  for (const row of rows) {
+    if (row.group === "GrandTotal" || row.type === "Section") {
+      total = row.Summary?.ColData;
+      continue;
+    }
+    const name = labelOf(row.ColData);
+    if (!name) continue;
+    entries.push({
+      name,
+      debit: row.ColData?.[1]?.value || "",
+      credit: row.ColData?.[2]?.value || "",
+    });
+  }
+
+  if (entries.length === 0) return;
+
+  // Debit and credit are told apart by column position alone, so every name must
+  // actually fit the column — padEnd only stops padding, it never truncates, and
+  // an over-long name would shove its amounts to an offset of their own.
+  const names = entries.map(e => elideAccountName(e.name, NAME_WIDTH_CAP));
+  const nameWidth = Math.max(...names.map(n => n.length));
+  const amountWidth = Math.max(
+    ...entries.flatMap(e => [e.debit.length, e.credit.length]),
+    6
+  );
+  // trimEnd: on a report whose whole point is context cost, padding the credit
+  // column on every debit-only row is ~10% of the output in trailing spaces.
+  const line = (name: string, debit: string, credit: string) =>
+    `${name.padEnd(nameWidth)}  ${debit.padStart(amountWidth)}  ${credit.padStart(amountWidth)}`.trimEnd();
+
+  out.push("");
+  out.push(line("Account", "Debit", "Credit"));
+  entries.forEach((e, i) => out.push(line(names[i], e.debit, e.credit)));
+
+  if (total) {
+    out.push(line("TOTAL", total[1]?.value || "", total[2]?.value || ""));
+  }
+}
+
+export function extractReportSummary(
+  report: QBReport,
+  reportType: string,
+  options: ReportSummaryOptions = {}
+): string {
   const header = report.Header || {};
   const columns = report.Columns?.Column || [];
   const rows = report.Rows?.Row || [];
@@ -21,35 +174,41 @@ export function extractReportSummary(report: QBReport, reportType: string): stri
   }
 
   // Column headers (departments if summarized)
-  const colTitles = columns.map(c => c.ColTitle).filter(Boolean);
-  if (colTitles.length > 2) {
-    lines.push(`Columns: ${colTitles.slice(1).join(", ")}`);
+  // Drop the leading label column positionally, then filter — relying on
+  // filter(Boolean) to remove it only works while QBO leaves its title empty,
+  // and a titled first column would otherwise leak into the department list.
+  const colTitles = columns.slice(1).map(c => c.ColTitle).filter(Boolean);
+  const multiColumn = colTitles.length > 2;
+  if (multiColumn) {
+    lines.push(`Columns: ${colTitles.join(", ")}`);
   }
 
-  // Extract summaries by group field
-  const groupOrder = reportType.includes("Balance")
-    ? ["TotalAssets", "TotalLiabilitiesAndEquity"]
-    : ["Income", "COGS", "GrossProfit", "Expenses", "NetOperatingIncome", "NetIncome"];
+  // Trial Balance is a flat account listing, not a set of sections. Detect it by
+  // shape rather than by name so a renamed report still renders.
+  const hasSections = rows.some(r => r.type === "Section" && r.group !== "GrandTotal");
+  if (!hasSections) {
+    renderTrialBalance(rows, lines);
+    return lines.join("\n");
+  }
 
-  const groupLabels: Record<string, string> = {
-    Income: "Total Income",
-    COGS: "Total Cost of Goods Sold",
-    GrossProfit: "Gross Profit",
-    Expenses: "Total Expenses",
-    NetOperatingIncome: "Net Operating Income",
-    OtherExpenses: "Total Other Expenses",
-    NetOtherIncome: "Net Other Income",
-    NetIncome: "Net Income",
-    TotalAssets: "Total Assets",
-    TotalLiabilitiesAndEquity: "Total Liabilities and Equity",
-  };
+  const groupOrder = reportType.includes("Balance Sheet")
+    ? BALANCE_SHEET_GROUP_ORDER
+    : PL_GROUP_ORDER;
 
   for (const groupName of groupOrder) {
     const row = rows.find(r => r.type === "Section" && r.group === groupName);
-    if (row?.Summary?.ColData) {
-      const values = row.Summary.ColData.slice(1).map(c => c.value || "0");
-      const value = colTitles.length > 2 ? values[values.length - 1] : values[0];
-      const label = groupLabels[groupName] || groupName;
+    if (!row) continue;
+
+    if (options.detail && row.Rows?.Row?.length) {
+      lines.push("");
+      const sectionLabel = labelOf(row.Header?.ColData) || GROUP_LABELS[groupName] || groupName;
+      lines.push(sectionLabel);
+      renderDetail(row.Rows.Row, multiColumn, 1, lines);
+    }
+
+    const value = pickValue(row.Summary?.ColData, multiColumn);
+    if (value !== null) {
+      const label = GROUP_LABELS[groupName] || groupName;
       lines.push(`${label}: ${value}`);
     }
   }
