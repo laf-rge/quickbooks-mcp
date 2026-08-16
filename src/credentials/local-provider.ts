@@ -17,7 +17,7 @@ const DEFAULT_CREDENTIAL_PATH = join(homedir(), ".quickbooks-mcp", "credentials.
  * create a "./~/qb" directory. Only a leading ~ is expanded; ~user is left alone
  * because resolving another user's home is not something we can do portably.
  */
-export function expandHome(filePath: string): string {
+function expandHome(filePath: string): string {
   if (filePath === "~") return homedir();
   if (filePath.startsWith("~/") || filePath.startsWith("~\\")) {
     return join(homedir(), filePath.slice(2));

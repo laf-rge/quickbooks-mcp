@@ -261,7 +261,6 @@ QBO_INLINE_OUTPUT=true
       "args": ["-y", "quickbooks-mcp"],
       "env": {
         "QBO_CREDENTIAL_MODE": "local",
-        "QBO_CREDENTIAL_FILE": "~/.quickbooks-mcp/credentials.json",
         "QBO_INLINE_OUTPUT": "true"
       }
     }
