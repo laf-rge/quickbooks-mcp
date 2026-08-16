@@ -74,11 +74,35 @@ function renderDetail(
       continue;
     }
 
-    // Leaf: an account row carries its name and value in ColData.
+    // Leaf: an account row carries its name and value in ColData. A row with no
+    // value cell at all still gets listed — dropping it would silently remove an
+    // account from a report whose purpose is completeness.
     const name = labelOf(row.ColData);
-    const value = pickValue(row.ColData, multiColumn);
-    if (name && value !== null) out.push(`${pad}${name}: ${value}`);
+    if (name) out.push(`${pad}${name}: ${pickValue(row.ColData, multiColumn) ?? "0"}`);
   }
+}
+
+const NAME_WIDTH_CAP = 60;
+
+// Fit an account name to the column without losing what identifies it. QBO
+// reports the full path ("1984 Other Assets:Security Deposits Corporate:Security
+// Deposits 20400 N. Santa Rosa"), where the leading account number and the
+// trailing leaf both carry meaning and the middle is the expendable part — so
+// drop the interior path segments before falling back to a blunt elide.
+export function elideAccountName(name: string, cap = NAME_WIDTH_CAP): string {
+  if (name.length <= cap) return name;
+
+  const parts = name.split(":");
+  if (parts.length > 2) {
+    const collapsed = `${parts[0]}:…:${parts[parts.length - 1]}`;
+    if (collapsed.length <= cap) return collapsed;
+  }
+
+  // Still too long (or no path to collapse): keep the head, which carries the
+  // account number, and the tail, which distinguishes siblings.
+  const tail = Math.floor((cap - 1) / 2);
+  const head = cap - 1 - tail;
+  return `${name.slice(0, head)}…${name.slice(name.length - tail)}`;
 }
 
 // Trial Balance has no Section grouping — every account is a bare ColData row of
@@ -104,20 +128,23 @@ function renderTrialBalance(rows: QBReportRow[], out: string[]): void {
 
   if (entries.length === 0) return;
 
-  // Cap the name column: a couple of deeply-nested sub-account names would
-  // otherwise pad every row out to their width.
-  const NAME_WIDTH_CAP = 60;
-  const nameWidth = Math.min(Math.max(...entries.map(e => e.name.length)), NAME_WIDTH_CAP);
+  // Debit and credit are told apart by column position alone, so every name must
+  // actually fit the column — padEnd only stops padding, it never truncates, and
+  // an over-long name would shove its amounts to an offset of their own.
+  const names = entries.map(e => elideAccountName(e.name, NAME_WIDTH_CAP));
+  const nameWidth = Math.max(...names.map(n => n.length));
   const amountWidth = Math.max(
     ...entries.flatMap(e => [e.debit.length, e.credit.length]),
     6
   );
+  // trimEnd: on a report whose whole point is context cost, padding the credit
+  // column on every debit-only row is ~10% of the output in trailing spaces.
   const line = (name: string, debit: string, credit: string) =>
-    `${name.padEnd(nameWidth)}  ${debit.padStart(amountWidth)}  ${credit.padStart(amountWidth)}`;
+    `${name.padEnd(nameWidth)}  ${debit.padStart(amountWidth)}  ${credit.padStart(amountWidth)}`.trimEnd();
 
   out.push("");
   out.push(line("Account", "Debit", "Credit"));
-  for (const e of entries) out.push(line(e.name, e.debit, e.credit));
+  entries.forEach((e, i) => out.push(line(names[i], e.debit, e.credit)));
 
   if (total) {
     out.push(line("TOTAL", total[1]?.value || "", total[2]?.value || ""));
@@ -147,9 +174,10 @@ export function extractReportSummary(
   }
 
   // Column headers (departments if summarized)
-  // filter(Boolean) already drops the leading label column, which has no title —
-  // slicing again on top of it used to hide the first department from this list.
-  const colTitles = columns.map(c => c.ColTitle).filter(Boolean);
+  // Drop the leading label column positionally, then filter — relying on
+  // filter(Boolean) to remove it only works while QBO leaves its title empty,
+  // and a titled first column would otherwise leak into the department list.
+  const colTitles = columns.slice(1).map(c => c.ColTitle).filter(Boolean);
   const multiColumn = colTitles.length > 2;
   if (multiColumn) {
     lines.push(`Columns: ${colTitles.join(", ")}`);
