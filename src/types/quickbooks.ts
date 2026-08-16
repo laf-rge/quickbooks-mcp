@@ -136,6 +136,23 @@ export interface QBQueryResponse<T = unknown> {
   };
 }
 
+export interface QBReportColData {
+  value?: string;
+  id?: string;
+}
+
+// QBO report rows nest arbitrarily deep: a Section carries a Header, child Rows
+// and a Summary, while a leaf row carries ColData directly. Trial Balance is the
+// odd one out — its account rows are bare ColData with no type or group at all.
+export interface QBReportRow {
+  type?: string;
+  group?: string;
+  Header?: { ColData?: QBReportColData[] };
+  Summary?: { ColData?: QBReportColData[] };
+  ColData?: QBReportColData[];
+  Rows?: { Row?: QBReportRow[] };
+}
+
 export interface QBReport {
   Header?: {
     ReportName?: string;
@@ -150,12 +167,7 @@ export interface QBReport {
     Column?: Array<{ ColTitle?: string; ColType?: string }>;
   };
   Rows?: {
-    Row?: Array<{
-      type?: string;
-      group?: string;
-      Summary?: { ColData?: Array<{ value?: string }> };
-      Rows?: { Row?: Array<unknown> };
-    }>;
+    Row?: QBReportRow[];
   };
 }
 

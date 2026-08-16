@@ -1,7 +1,7 @@
 // Handlers for report tools (profit_loss, balance_sheet, trial_balance)
 
 import QuickBooks from "node-quickbooks";
-import { promisify, resolveDepartmentId } from "../../client/index.js";
+import { promisify, resolveDepartmentId, withRetry } from "../../client/index.js";
 import { outputReport } from "../../utils/index.js";
 import { extractReportSummary } from "../../reports/index.js";
 import { QBReport } from "../../types/index.js";
@@ -14,9 +14,10 @@ export async function handleGetProfitLoss(
     summarize_by?: string;
     department?: string;
     accounting_method?: string;
+    detail_level?: string;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { start_date, end_date, summarize_by, department, accounting_method } = args;
+  const { start_date, end_date, summarize_by, department, accounting_method, detail_level } = args;
 
   const options: Record<string, string> = {};
   if (start_date) options.start_date = start_date;
@@ -25,11 +26,11 @@ export async function handleGetProfitLoss(
   if (department) options.department = await resolveDepartmentId(client, department);
   if (accounting_method) options.accounting_method = accounting_method;
 
-  const result = await promisify<unknown>((cb) =>
-    client.reportProfitAndLoss(options, cb)
+  const result = await withRetry(() =>
+    promisify<unknown>((cb) => client.reportProfitAndLoss(options, cb))
   ) as QBReport;
 
-  const summary = extractReportSummary(result, "Profit and Loss");
+  const summary = extractReportSummary(result, "Profit and Loss", { detail: detail_level === "account" });
   return outputReport("profit-loss", result, summary);
 }
 
@@ -40,9 +41,10 @@ export async function handleGetBalanceSheet(
     summarize_by?: string;
     department?: string;
     accounting_method?: string;
+    detail_level?: string;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { as_of_date, summarize_by, department, accounting_method } = args;
+  const { as_of_date, summarize_by, department, accounting_method, detail_level } = args;
 
   const options: Record<string, string> = {};
   if (as_of_date) {
@@ -55,11 +57,11 @@ export async function handleGetBalanceSheet(
   if (department) options.department = await resolveDepartmentId(client, department);
   if (accounting_method) options.accounting_method = accounting_method;
 
-  const result = await promisify<unknown>((cb) =>
-    client.reportBalanceSheet(options, cb)
+  const result = await withRetry(() =>
+    promisify<unknown>((cb) => client.reportBalanceSheet(options, cb))
   ) as QBReport;
 
-  const summary = extractReportSummary(result, "Balance Sheet");
+  const summary = extractReportSummary(result, "Balance Sheet", { detail: detail_level === "account" });
   return outputReport("balance-sheet", result, summary);
 }
 
@@ -78,8 +80,8 @@ export async function handleGetTrialBalance(
   if (end_date) options.end_date = end_date;
   if (accounting_method) options.accounting_method = accounting_method;
 
-  const result = await promisify<unknown>((cb) =>
-    client.reportTrialBalance(options, cb)
+  const result = await withRetry(() =>
+    promisify<unknown>((cb) => client.reportTrialBalance(options, cb))
   ) as QBReport;
 
   const summary = extractReportSummary(result, "Trial Balance");

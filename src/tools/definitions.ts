@@ -89,6 +89,11 @@ export const toolDefinitions = [
           type: "string",
           description: "Accounting method: 'Accrual' (default) or 'Cash'",
         },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "account"],
+          description: "'summary' (default) returns section totals only. 'account' also lists each account with its balance, so you do not have to open the full report file.",
+        },
       },
       required: [],
     },
@@ -114,6 +119,11 @@ export const toolDefinitions = [
         accounting_method: {
           type: "string",
           description: "Accounting method: 'Accrual' (default) or 'Cash'",
+        },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "account"],
+          description: "'summary' (default) returns section totals only. 'account' also lists each account with its balance, so you do not have to open the full report file.",
         },
       },
       required: [],
