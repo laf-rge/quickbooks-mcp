@@ -147,6 +147,10 @@ export const toolDefinitions = [
           type: "string",
           description: "Accounting method: 'Accrual' (default) or 'Cash'",
         },
+        flags: {
+          type: "boolean",
+          description: "If true, append a close-review pass over the report: accounts carrying a balance on the wrong side (an asset or expense with a credit, a liability/equity/income with a debit), and uncategorized/suspense accounts that still hold a balance. Known contra accounts (accumulated depreciation, allowance accounts, discounts, retained earnings) are excluded. Default false.",
+        },
       },
       required: [],
     },

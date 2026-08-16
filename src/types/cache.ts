@@ -12,6 +12,10 @@ export interface CachedAccount {
   FullyQualifiedName?: string;
   AcctNum?: string;
   AccountType?: string;
+  AccountSubType?: string;
+  // "Asset" | "Liability" | "Equity" | "Revenue" | "Expense" — the normal side of
+  // an account follows from this, which is what the Trial Balance flag pass needs.
+  Classification?: string;
   CurrentBalance?: number;
   Active?: boolean;
   // QBO nests accounts arbitrarily deep; ParentRef is how the tree is walked.

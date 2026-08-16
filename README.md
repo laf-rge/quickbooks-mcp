@@ -300,7 +300,7 @@ QBO_INLINE_OUTPUT=true
 | `list_accounts` | List chart of accounts with filtering |
 | `get_profit_loss` | Profit & Loss report (by month, department, class, etc.) |
 | `get_balance_sheet` | Balance Sheet report |
-| `get_trial_balance` | Trial Balance report |
+| `get_trial_balance` | Trial Balance report (`flags: true` adds a close-review pass for wrong-side and uncategorized/suspense balances) |
 | `query_account_transactions` | All transactions affecting a specific account (13 posting entity types, paginated, optional sub-account rollup; see `docs/entity-coverage.md` for limits) |
 | `account_period_summary` | Period summary for an account (opening/closing balance, debits, credits, count) |
 | **Journal Entries** | |

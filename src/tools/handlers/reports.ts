@@ -1,9 +1,14 @@
 // Handlers for report tools (profit_loss, balance_sheet, trial_balance)
 
 import QuickBooks from "node-quickbooks";
-import { promisify, resolveDepartmentId, withRetry } from "../../client/index.js";
+import { getAccountCache, promisify, resolveDepartmentId, withRetry } from "../../client/index.js";
 import { outputReport } from "../../utils/index.js";
-import { extractReportSummary } from "../../reports/index.js";
+import {
+  analyzeTrialBalance,
+  extractReportSummary,
+  parseTrialBalance,
+  renderTrialBalanceFlags,
+} from "../../reports/index.js";
 import { QBReport } from "../../types/index.js";
 
 export async function handleGetProfitLoss(
@@ -71,9 +76,10 @@ export async function handleGetTrialBalance(
     start_date?: string;
     end_date?: string;
     accounting_method?: string;
+    flags?: boolean;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { start_date, end_date, accounting_method } = args;
+  const { start_date, end_date, accounting_method, flags } = args;
 
   const options: Record<string, string> = {};
   if (start_date) options.start_date = start_date;
@@ -84,6 +90,17 @@ export async function handleGetTrialBalance(
     promisify<unknown>((cb) => client.reportTrialBalance(options, cb))
   ) as QBReport;
 
-  const summary = extractReportSummary(result, "Trial Balance");
-  return outputReport("trial-balance", result, summary);
+  const lines = [extractReportSummary(result, "Trial Balance")];
+
+  // Opt-in: the flag pass costs an account-cache fetch and a block of output, so
+  // the default response stays exactly what it was.
+  if (flags) {
+    const cache = await getAccountCache(client);
+    const { entries } = parseTrialBalance(result.Rows?.Row || []);
+    const flagLines: string[] = [];
+    renderTrialBalanceFlags(analyzeTrialBalance(entries, cache.byId, cache.byAcctNum), flagLines);
+    lines.push(flagLines.join("\n"));
+  }
+
+  return outputReport("trial-balance", result, lines.join("\n"));
 }
