@@ -261,7 +261,6 @@ QBO_INLINE_OUTPUT=true
       "args": ["-y", "quickbooks-mcp"],
       "env": {
         "QBO_CREDENTIAL_MODE": "local",
-        "QBO_CREDENTIAL_FILE": "~/.quickbooks-mcp/credentials.json",
         "QBO_INLINE_OUTPUT": "true"
       }
     }
@@ -280,7 +279,7 @@ QBO_INLINE_OUTPUT=true
 | `QBO_CREDENTIAL_MODE` | `local` | Credential storage: `local` or `aws` |
 | `QBO_CLIENT_ID` | - | QuickBooks app Client ID (local mode) |
 | `QBO_CLIENT_SECRET` | - | QuickBooks app Client Secret (local mode) |
-| `QBO_CREDENTIAL_FILE` | `~/.quickbooks-mcp/credentials.json` | Custom credential file path |
+| `QBO_CREDENTIAL_FILE` | `~/.quickbooks-mcp/credentials.json` | Custom credential file path. A leading `~` is expanded to your home directory, so it works in an MCP client's JSON `env` block where no shell is present to expand it. |
 | `QBO_INLINE_OUTPUT` | `false` | Return responses inline instead of writing to `/tmp` files. Required when using Claude Desktop or plugin environments where file-based output is not accessible to the model. |
 | `QBO_SANDBOX` | `false` | Use QuickBooks sandbox environment. Also switches the "View in QuickBooks" deep links to `app.sandbox.qbo.intuit.com` so they cannot open the production company. |
 | `AWS_REGION` | `us-east-2` | AWS region (aws mode) |

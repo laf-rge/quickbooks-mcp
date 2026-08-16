@@ -9,10 +9,28 @@ import type { CredentialProvider, QBCredentials } from "./types.js";
 const DEFAULT_CREDENTIAL_PATH = join(homedir(), ".quickbooks-mcp", "credentials.json");
 
 /**
+ * Expand a leading ~ to the user's home directory.
+ *
+ * A shell expands ~ before the value ever reaches process.env, but this server
+ * is normally configured through an MCP client's JSON "env" block, where nothing
+ * does — so "~/qb/credentials.json" would otherwise be taken literally and
+ * create a "./~/qb" directory. Only a leading ~ is expanded; ~user is left alone
+ * because resolving another user's home is not something we can do portably.
+ */
+function expandHome(filePath: string): string {
+  if (filePath === "~") return homedir();
+  if (filePath.startsWith("~/") || filePath.startsWith("~\\")) {
+    return join(homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
+
+/**
  * Get the credential file path from environment or use default
  */
 function getCredentialPath(): string {
-  return process.env.QBO_CREDENTIAL_FILE || DEFAULT_CREDENTIAL_PATH;
+  const configured = process.env.QBO_CREDENTIAL_FILE;
+  return configured ? expandHome(configured) : DEFAULT_CREDENTIAL_PATH;
 }
 
 /**
