@@ -117,7 +117,12 @@ export async function handleCreateBill(
   // Resolve AP account if specified
   let apAccountRef: { value: string; name: string } | undefined;
   if (ap_account) {
-    const acct = resolveAccountRef(acctCache, ap_account);
+    // QBO requires APAccountRef to be an A/P account; restricting the match keeps
+    // a loose partial hit from silently booking the bill against something else.
+    const acct = resolveAccountRef(acctCache, ap_account, {
+      label: "A/P account",
+      accountType: "Accounts Payable",
+    });
     apAccountRef = { value: acct.value, name: acct.name };
   }
 
