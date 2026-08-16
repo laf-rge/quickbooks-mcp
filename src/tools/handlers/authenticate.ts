@@ -54,7 +54,7 @@ export async function handleAuthenticate(args: AuthenticateArgs): Promise<ToolRe
           `QBO_CLIENT_SECRET=your_client_secret\n` +
           `\`\`\`\n\n` +
           `### Option 2: Create a Credentials File\n\n` +
-          `Create \`~/.quickbooks-mcp/credentials.json\` with:\n` +
+          `Create \`${localProvider.credentialPath}\` with:\n` +
           `\`\`\`json\n` +
           `{\n` +
           `  "client_id": "your_client_id",\n` +
@@ -104,7 +104,7 @@ export async function handleAuthenticate(args: AuthenticateArgs): Promise<ToolRe
           type: "text",
           text: `## Authentication Successful!\n\n` +
             `Connected to QuickBooks company: **${result.companyId}**\n\n` +
-            `Credentials have been saved to your local credentials file.\n\n` +
+            `Credentials have been saved to \`${localProvider.credentialPath}\`.\n\n` +
             `You can now use all other QuickBooks tools to query and manage your data.\n\n` +
             `### Next Steps\n\n` +
             `Try running:\n` +
