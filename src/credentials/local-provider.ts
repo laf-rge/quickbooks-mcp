@@ -38,7 +38,10 @@ function getCredentialPath(): string {
  * Stores credentials in ~/.quickbooks-mcp/credentials.json by default
  */
 export class LocalCredentialProvider implements CredentialProvider {
-  private credentialPath: string;
+  // Public so user-facing guidance can name the file actually in use rather
+  // than assuming the default — QBO_CREDENTIAL_FILE may point elsewhere, and
+  // advice about a path the server is not reading is worse than no advice.
+  readonly credentialPath: string;
 
   constructor() {
     this.credentialPath = getCredentialPath();
