@@ -300,7 +300,7 @@ QBO_INLINE_OUTPUT=true
 | `list_accounts` | List chart of accounts with filtering |
 | `get_profit_loss` | Profit & Loss report (by month, department, class, etc.) |
 | `get_balance_sheet` | Balance Sheet report |
-| `get_trial_balance` | Trial Balance report |
+| `get_trial_balance` | Trial Balance report (`flags: true` adds a close-review pass for wrong-side and uncategorized/suspense balances) |
 | `query_account_transactions` | All transactions affecting a specific account (13 posting entity types, paginated, optional sub-account rollup; see `docs/entity-coverage.md` for limits) |
 | `account_period_summary` | Period summary for an account (opening/closing balance, debits, credits, count) |
 | **Journal Entries** | |
@@ -351,7 +351,15 @@ The server automatically refreshes OAuth tokens on each request and persists the
 npm run dev      # Run in development mode
 npm run build    # Build
 npm run typecheck # Type check
+npm test         # Run the test suite
 ```
+
+Tests live in `tests/`, mirroring `src/`. They are TypeScript, compiled by
+`tsconfig.test.json` into `dist-test/` and run by Node's built-in test runner —
+no test framework dependency. Type errors in a test are build failures, so a
+test referencing a renamed export fails loudly rather than silently skipping.
+Anything needing a QuickBooks client passes a hand-written stand-in covering
+just the calls under test, so the suite runs offline with no credentials.
 
 ---
 
