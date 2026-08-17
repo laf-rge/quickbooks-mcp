@@ -94,6 +94,17 @@ A cap alone is a dead end — the remote caller has no filesystem and cannot rea
 - Report the position back (`pagination.nextOffset`) **and** say so in the summary text — `query` emits `STARTPOSITION`, `query_account_transactions` emits `offset=`. A truncation notice with no continuation hint is a bug.
 - Keep totals computed over the full set so they never change as the caller pages.
 
+Report tools take the other route: their rendered summary already carries the
+numbers, so the raw payload is opt-in via `outputReport`'s `includeRaw` (see
+`get_profit_loss`'s `include_raw`). `includeRaw` defaults to **true**, so entity
+reads — where the payload *is* the answer — are unaffected; only the report
+handlers pass `false`. Prefer this to capping a payload: a sliced
+`JSON.stringify` is invalid JSON, unparseable by any consumer and only partly
+legible to a model, while still costing most of the tokens. If you drop data from
+the default response, make sure the summary can still answer what the payload
+answered — `columns: "all"` exists because collapsing every row to its total
+column would otherwise have hidden per-department values entirely.
+
 ## Common Files
 
 | Task | File |

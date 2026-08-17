@@ -18,13 +18,38 @@ export function isHttpMode(): boolean {
 
 type ToolResult = { content: Array<{ type: string; text: string }> };
 
+export interface OutputReportOptions {
+  /**
+   * Whether HTTP mode appends the raw payload as a second content block.
+   *
+   * Defaults to true because most callers are entity reads (get_bill,
+   * get_deposit, …) whose payload *is* the answer. The report tools pass false
+   * unless asked: their rendered summary already carries the numbers, so the
+   * raw copy is largely redundant and roughly doubles the response.
+   *
+   * There is deliberately no "truncated" middle ground — a sliced
+   * JSON.stringify is invalid JSON, unparseable by any consumer and only
+   * partly legible to a model, while still costing most of the tokens.
+   */
+  includeRaw?: boolean;
+}
+
 /**
  * Return report data in the appropriate format for the current transport.
  * - stdio: writes to temp file, appends filepath to summary
- * - http: returns summary + inline JSON data
+ * - http: returns summary, plus inline JSON data when includeRaw
  */
-export function outputReport(reportType: string, data: unknown, summary: string): ToolResult {
+export function outputReport(
+  reportType: string,
+  data: unknown,
+  summary: string,
+  options: OutputReportOptions = {}
+): ToolResult {
   if (isHttpMode()) {
+    const { includeRaw = true } = options;
+    if (!includeRaw) {
+      return { content: [{ type: "text", text: summary }] };
+    }
     return {
       content: [
         { type: "text", text: summary },
