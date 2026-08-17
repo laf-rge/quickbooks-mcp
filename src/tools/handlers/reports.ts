@@ -20,9 +20,14 @@ export async function handleGetProfitLoss(
     department?: string;
     accounting_method?: string;
     detail_level?: string;
+    columns?: string;
+    include_raw?: boolean;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { start_date, end_date, summarize_by, department, accounting_method, detail_level } = args;
+  const {
+    start_date, end_date, summarize_by, department, accounting_method,
+    detail_level, columns, include_raw = false,
+  } = args;
 
   const options: Record<string, string> = {};
   if (start_date) options.start_date = start_date;
@@ -35,8 +40,11 @@ export async function handleGetProfitLoss(
     promisify<unknown>((cb) => client.reportProfitAndLoss(options, cb))
   ) as QBReport;
 
-  const summary = extractReportSummary(result, "Profit and Loss", { detail: detail_level === "account" });
-  return outputReport("profit-loss", result, summary);
+  const summary = extractReportSummary(result, "Profit and Loss", {
+    detail: detail_level === "account",
+    allColumns: columns === "all",
+  });
+  return outputReport("profit-loss", result, summary, { includeRaw: include_raw });
 }
 
 export async function handleGetBalanceSheet(
@@ -47,9 +55,14 @@ export async function handleGetBalanceSheet(
     department?: string;
     accounting_method?: string;
     detail_level?: string;
+    columns?: string;
+    include_raw?: boolean;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { as_of_date, summarize_by, department, accounting_method, detail_level } = args;
+  const {
+    as_of_date, summarize_by, department, accounting_method,
+    detail_level, columns, include_raw = false,
+  } = args;
 
   const options: Record<string, string> = {};
   if (as_of_date) {
@@ -66,8 +79,11 @@ export async function handleGetBalanceSheet(
     promisify<unknown>((cb) => client.reportBalanceSheet(options, cb))
   ) as QBReport;
 
-  const summary = extractReportSummary(result, "Balance Sheet", { detail: detail_level === "account" });
-  return outputReport("balance-sheet", result, summary);
+  const summary = extractReportSummary(result, "Balance Sheet", {
+    detail: detail_level === "account",
+    allColumns: columns === "all",
+  });
+  return outputReport("balance-sheet", result, summary, { includeRaw: include_raw });
 }
 
 export async function handleGetTrialBalance(
@@ -77,9 +93,10 @@ export async function handleGetTrialBalance(
     end_date?: string;
     accounting_method?: string;
     flags?: boolean;
+    include_raw?: boolean;
   }
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const { start_date, end_date, accounting_method, flags } = args;
+  const { start_date, end_date, accounting_method, flags, include_raw = false } = args;
 
   const options: Record<string, string> = {};
   if (start_date) options.start_date = start_date;
@@ -109,5 +126,5 @@ export async function handleGetTrialBalance(
     lines.push(flagLines.join("\n"));
   }
 
-  return outputReport("trial-balance", result, lines.join("\n"));
+  return outputReport("trial-balance", result, lines.join("\n"), { includeRaw: include_raw });
 }

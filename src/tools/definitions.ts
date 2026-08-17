@@ -94,6 +94,15 @@ export const toolDefinitions = [
           enum: ["summary", "account"],
           description: "'summary' (default) returns section totals only. 'account' also lists each account with its balance, so you do not have to open the full report file.",
         },
+        columns: {
+          type: "string",
+          enum: ["total", "all"],
+          description: "'total' (default) shows only the total column. 'all' renders every column as a table — use with summarize_by to see per-department (or per-month) values, which are otherwise absent from the rendered output.",
+        },
+        include_raw: {
+          type: "boolean",
+          description: "Append the full raw report payload. Off by default: the rendered summary already carries the numbers, and the raw copy roughly doubles the response. Only needed for fields the summary does not render.",
+        },
       },
       required: [],
     },
@@ -125,6 +134,15 @@ export const toolDefinitions = [
           enum: ["summary", "account"],
           description: "'summary' (default) returns section totals only. 'account' also lists each account with its balance, so you do not have to open the full report file.",
         },
+        columns: {
+          type: "string",
+          enum: ["total", "all"],
+          description: "'total' (default) shows only the total column. 'all' renders every column as a table — use with summarize_by to see per-department (or per-month) values, which are otherwise absent from the rendered output.",
+        },
+        include_raw: {
+          type: "boolean",
+          description: "Append the full raw report payload. Off by default: the rendered summary already carries the numbers, and the raw copy roughly doubles the response. Only needed for fields the summary does not render.",
+        },
       },
       required: [],
     },
@@ -150,6 +168,10 @@ export const toolDefinitions = [
         flags: {
           type: "boolean",
           description: "If true, append a close-review pass over the report: accounts carrying a balance on the wrong side (an asset or expense with a credit, a liability/equity/income with a debit), and uncategorized/suspense accounts that still hold a balance. Contra accounts named as such (accumulated depreciation, allowance accounts) are checked against their inverted normal side rather than skipped; retained earnings and contra-by-subtype-only accounts are left unchecked. Default false.",
+        },
+        include_raw: {
+          type: "boolean",
+          description: "Append the full raw report payload. Off by default: the rendered account/debit/credit table already carries the numbers, and the raw copy roughly doubles the response.",
         },
       },
       required: [],

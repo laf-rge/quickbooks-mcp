@@ -14,3 +14,10 @@ export function pickValue(cols: QBReportColData[] | undefined, multiColumn: bool
   if (values.length === 0) return null;
   return multiColumn ? values[values.length - 1] : values[0];
 }
+
+// Every value column, positionally. Index i here lines up with index i of the
+// report's column titles, so an empty cell must stay an empty string rather than
+// being dropped — collapsing it would shift later values under the wrong header.
+export function allValues(cols: QBReportColData[] | undefined): string[] {
+  return (cols ?? []).slice(1).map(c => c.value || "");
+}
