@@ -1,0 +1,13 @@
+// Tests compile with the same settings as the build, but rooted at the repo so
+// tests/ comes along, and emitted somewhere the published package never sees
+// (package.json "files" ships dist/ only).
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist-test",
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}

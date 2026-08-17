@@ -95,10 +95,17 @@ export async function handleGetTrialBalance(
   // Opt-in: the flag pass costs an account-cache fetch and a block of output, so
   // the default response stays exactly what it was.
   if (flags) {
-    const cache = await getAccountCache(client);
-    const { entries } = parseTrialBalance(result.Rows?.Row || []);
     const flagLines: string[] = [];
-    renderTrialBalanceFlags(analyzeTrialBalance(entries, cache.byId, cache.byAcctNum), flagLines);
+    try {
+      const cache = await getAccountCache(client);
+      const { entries } = parseTrialBalance(result.Rows?.Row || []);
+      renderTrialBalanceFlags(analyzeTrialBalance(entries, cache.byId, cache.byAcctNum), flagLines);
+    } catch (error) {
+      // The report is the deliverable; the flags are an extra. A chart-of-accounts
+      // fetch that fails must not take down a call that would otherwise succeed.
+      const reason = error instanceof Error ? error.message : String(error);
+      flagLines.push("", `FLAGS unavailable: ${reason}`);
+    }
     lines.push(flagLines.join("\n"));
   }
 

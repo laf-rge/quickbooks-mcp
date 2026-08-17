@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-lambda/
+dist-test/
 deploy/
 .env
 .env.local
