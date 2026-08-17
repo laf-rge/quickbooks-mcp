@@ -204,13 +204,15 @@ describe("analyzeTrialBalance: wrong-side balances", () => {
 describe("analyzeTrialBalance: contra accounts", () => {
   const accounts = chart([
     { id: "1", name: "Accumulated Depreciation", acctNum: "1599", classification: "Asset", type: "Fixed Asset", subType: "AccumulatedDepreciation" },
-    // WMC's real one: the subtype is useless, only the name gives it away.
+    // A contra the subtype misses: both values are valid under Fixed Asset.
     { id: "2", name: "Accumulated Depreciation", acctNum: "1598", classification: "Asset", type: "Fixed Asset", subType: "MachineryAndEquipment" },
     { id: "3", name: "Discounts", acctNum: "4090", classification: "Revenue", type: "Income", subType: "DiscountsRefundsGiven" },
     { id: "4", name: "Allowance for Bad Debts", acctNum: "1205", classification: "Asset", type: "Other Current Asset", subType: "AllowanceForBadDebts" },
-    // WMC's real one, the other way round: an ordinary security deposit that
-    // someone saddled with a contra subtype.
-    { id: "5", name: "Security Deposit # 20407", acctNum: "1985", classification: "Asset", type: "Other Asset", subType: "AccumulatedAmortizationOfOtherAssets" },
+    // The mirror image: an ordinary asset carrying a contra subtype. Other Asset
+    // offers SecurityDeposits too, but nothing stops the wrong pick.
+    { id: "5", name: "Security Deposit", acctNum: "1985", classification: "Asset", type: "Other Asset", subType: "AccumulatedAmortizationOfOtherAssets" },
+    { id: "6", name: "Owner Draws", acctNum: "3200", classification: "Equity", type: "Equity", subType: "PartnerDistributions" },
+    { id: "7", name: "Loss on Disposal of Assets", acctNum: "4910", classification: "Revenue", type: "Other Income", subType: "LossOnDisposalOfAssets" },
   ]);
   const analyze = (entries: TrialBalanceEntry[]) =>
     analyzeTrialBalance(entries, accounts.byId, accounts.byAcctNum);
@@ -248,7 +250,18 @@ describe("analyzeTrialBalance: contra accounts", () => {
   it("does not flag an ordinary account that carries a stray contra subtype", () => {
     // A security deposit sitting on its normal debit side must stay quiet even
     // though QBO has it typed AccumulatedAmortizationOfOtherAssets.
-    const flags = analyze([entry("5", "1985 Security Deposit # 20407", "3315.00")]);
+    const flags = analyze([entry("5", "1985 Security Deposit", "3315.00")]);
+    assert.deepEqual(flags.wrongSide, []);
+  });
+
+  it("leaves owner draws and gain/loss accounts alone on either side", () => {
+    // Equity draws normally carry a debit, and a Revenue-classified gain/loss
+    // account carries one in a loss year. Both would otherwise be permanent
+    // false flags for owner-managed companies.
+    const flags = analyze([
+      entry("6", "3200 Owner Draws", "50000.00"),
+      entry("7", "4910 Loss on Disposal of Assets", "1200.00"),
+    ]);
     assert.deepEqual(flags.wrongSide, []);
   });
 });
@@ -283,7 +296,7 @@ describe("analyzeTrialBalance: uncategorized and suspense accounts", () => {
     { id: "4", name: "Opening Balance Equity", acctNum: "3000", classification: "Equity", type: "Equity", subType: "OpeningBalanceEquity" },
     { id: "5", name: "Undeposited Funds", acctNum: "1099", classification: "Asset", type: "Other Current Asset", subType: "UndepositedFunds" },
     { id: "6", name: "Inventory Uncategorized", acctNum: "1201", classification: "Asset", type: "Other Current Asset", subType: "Inventory" },
-    { id: "7", name: "Franchise Fees Clearing", acctNum: "2370", classification: "Liability", type: "Other Current Liability", subType: "OtherCurrentLiabilities" },
+    { id: "7", name: "Payroll Clearing", acctNum: "2206", classification: "Liability", type: "Other Current Liability", subType: "OtherCurrentLiabilities" },
   ]);
   const analyze = (entries: TrialBalanceEntry[]) =>
     analyzeTrialBalance(entries, accounts.byId, accounts.byAcctNum);
@@ -316,7 +329,7 @@ describe("analyzeTrialBalance: uncategorized and suspense accounts", () => {
   });
 
   it("leaves clearing accounts out of scope", () => {
-    const flags = analyze([entry("7", "2370 Franchise Fees Clearing", "", "27891.48")]);
+    const flags = analyze([entry("7", "2206 Payroll Clearing", "", "1000.00")]);
     assert.deepEqual(flags.suspense, []);
     assert.deepEqual(flags.wrongSide, []);
   });

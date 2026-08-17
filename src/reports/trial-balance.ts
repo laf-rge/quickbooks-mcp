@@ -12,9 +12,9 @@ const NAME_WIDTH_CAP = 60;
 
 // Fit an account name to the column without losing what identifies it. QBO
 // reports the full path ("1984 Other Assets:Security Deposits Corporate:Security
-// Deposits 20400 N. Santa Rosa"), where the leading account number and the
-// trailing leaf both carry meaning and the middle is the expendable part — so
-// drop the interior path segments before falling back to a blunt elide.
+// Deposit - Store Lease"), where the leading account number and the trailing
+// leaf both carry meaning and the middle is the expendable part — so drop the
+// interior path segments before falling back to a blunt elide.
 export function elideAccountName(name: string, cap = NAME_WIDTH_CAP): string {
   if (name.length <= cap) return name;
 
@@ -100,6 +100,14 @@ export function renderTrialBalance(rows: QBReportRow[], out: string[]): void {
 
 type Side = "debit" | "credit";
 
+// Which side is "normal" is ordinary double-entry bookkeeping, not something the
+// QBO API states: Intuit's Account entity documents Classification, AccountType
+// and AccountSubType and says nothing anywhere about normal balance or contra
+// accounts. There is no field to read, so the tables below are the mapping.
+//
+// Classification is the field to lean on — Intuit marks it "read only, system
+// defined", so QBO derives it and a user cannot mis-set it. Valid values are
+// exactly Asset, Equity, Expense, Liability and Revenue.
 const NORMAL_SIDE_BY_CLASSIFICATION: Record<string, Side> = {
   Asset: "debit",
   Expense: "debit",
@@ -129,12 +137,15 @@ const NORMAL_SIDE_BY_ACCOUNT_TYPE: Record<string, Side> = {
   "Other Income": "credit",
 };
 
-// Contra accounts — normal balance opposite their classification's — are
-// detected in two tiers, because QBO's AccountSubType turns out to be unreliable
-// in *both* directions on real files. WMC alone has "Accumulated Depreciation"
-// typed MachineryAndEquipment (a contra the subtype misses) and a plain
-// "Security Deposit # 20407" typed AccumulatedAmortizationOfOtherAssets (an
-// ordinary asset the subtype wrongly claims).
+// Accounts that sit opposite their classification's normal side are handled in
+// two tiers of confidence, because AccountSubType cannot carry the weight on its
+// own. Intuit documents it as a picker scoped to the AccountType — "Other Asset"
+// offers both SecurityDeposits and AccumulatedAmortizationOfOtherAssets, and
+// "Fixed Asset" offers both AccumulatedDepreciation and MachineryAndEquipment —
+// with no semantic validation. A wrong-but-valid pick is therefore ordinary, and
+// real files contain both mistakes: a genuine accumulated-depreciation account
+// typed MachineryAndEquipment, and a plain security deposit typed
+// AccumulatedAmortizationOfOtherAssets.
 //
 // Tier 1 — the name says so. Nobody names an account "Accumulated Depreciation"
 // by accident, so the expected side is inverted and the account stays checked:
@@ -143,25 +154,48 @@ const NORMAL_SIDE_BY_ACCOUNT_TYPE: Record<string, Side> = {
 const INVERTED_NAME =
   /^(less[\s:-]+)?(accumulated\s+(depreciation|amortization|amortisation|depletion)|allowance\s+for\b)/i;
 
-// Tier 2 — only the subtype says so. That is enough to stop us asserting the
-// account is on the wrong side, but not enough to assert which side is wrong, so
-// these are left unchecked rather than judged by a signal just seen to misfire.
-// The cost is a real error inside a subtype-only contra going unreported; the
-// alternative is flagging every ordinary account that carries a stray subtype.
-const CONTRA_SUBTYPES = new Set([
+// Tier 2 — the subtype alone suggests there is no side worth judging. Enough to
+// stop us asserting a wrong side, not enough to assert which side is wrong, so
+// these are left unchecked rather than judged by a signal that demonstrably
+// misfires. The cost is a real error inside one of them going unreported; the
+// alternative is flagging every ordinary account carrying a stray subtype.
+//
+// Values are Intuit's, taken from the AccountSubType list on the Account entity.
+const UNJUDGEABLE_SUBTYPES = new Set([
+  // Contra assets.
   "AccumulatedDepreciation",
   "AccumulatedAmortization",
   "AccumulatedDepletion",
   "AccumulatedAmortizationOfOtherAssets",
+  "CumulativeDepreciationOnIntangibleAssets",
   "AllowanceForBadDebts",
+  "ProvisionsCurrentAssets",
+  "ProvisionsFixedAssets",
+  "ProvisionsNonCurrentAssets",
+  // Contra revenue.
   "DiscountsRefundsGiven",
+  // Equity accounts that normally carry a debit: draws, distributions and
+  // treasury stock. Without these, every owner-managed company gets a permanent
+  // false flag.
+  "TreasuryStock",
+  "DividendDisbursed",
+  "PartnerDistributions",
+  "PersonalExpense",
+  // Equity accounts that legitimately swing either way.
+  "RetainedEarnings",
+  "AccumulatedAdjustment",
+  "AccumulatedOtherComprehensiveIncome",
+  // Gain/loss accounts are classified Revenue but carry a debit in a loss year.
+  "GainLossOnSaleOfFixedAssets",
+  "GainLossOnSaleOfInvestments",
+  "LossOnDisposalOfAssets",
+  "UnrealisedLossOnSecuritiesNetOfTax",
 ]);
 
-// Retained earnings has no wrong side to be on: a debit is a cumulative deficit
-// and a credit is retained profit, both facts about the business rather than
-// posting errors. Inverting it would flag the healthy case.
-const UNCHECKABLE_SUBTYPES = new Set(["RetainedEarnings"]);
-const UNCHECKABLE_NAME = /^retained\s+earnings\b/i;
+// Retained earnings by name, for files where the subtype was never set: a debit
+// is a cumulative deficit and a credit is retained profit, both facts about the
+// business rather than posting errors.
+const UNJUDGEABLE_NAME = /^retained\s+earnings\b/i;
 
 // QBO's own suspense buckets, identified by the subtype it assigns them.
 // Undeposited Funds is deliberately absent: a balance there is cash in transit,
@@ -172,12 +206,13 @@ const SUSPENSE_SUBTYPES = new Set([
   "UnappliedCashBillPaymentExpense",
 ]);
 
-// "Uncategorized Income/Expense/Asset" and "Ask My Accountant" are generated by
-// QBO but routinely retyped by hand afterwards, so their subtype says nothing
-// and the name is the only stable marker. Anchored at the start of the account's
-// own name so "Inventory Uncategorized" — a real inventory account — is left
-// alone. Clearing accounts are out of scope: nothing in QBO's data says which
-// ones are expected to be zero (see issue #49).
+// Intuit's subtype list has no "uncategorized" value at all — QBO generates
+// those accounts but types them as ordinary ones (Uncategorized Income arrives
+// as OtherPrimaryIncome), and bookkeepers retype them freely afterwards. The
+// name is the only marker there is. Anchored at the start of the account's own
+// name so "Inventory Uncategorized" — a real inventory account — is left alone.
+// Clearing accounts are out of scope: nothing in QBO's data says which ones are
+// expected to be zero (see issue #49).
 const SUSPENSE_NAME = /^(uncategor(ized|ised)\b|ask my accountant\b|opening balance equity\b)/i;
 
 export interface TrialBalanceFlag {
@@ -233,13 +268,10 @@ function isInverted(account: CachedAccount): boolean {
   return INVERTED_NAME.test(bareName(account));
 }
 
-// Tier 2: an account with no side worth judging — retained earnings, where
-// neither side is an error, or a contra subtype with no corroborating name,
-// where the only signal is one that demonstrably misfires.
+// Tier 2: an account with no side worth judging, per its subtype alone.
 function isUnjudgeable(account: CachedAccount): boolean {
-  const subType = account.AccountSubType;
-  if (subType && (UNCHECKABLE_SUBTYPES.has(subType) || CONTRA_SUBTYPES.has(subType))) return true;
-  return UNCHECKABLE_NAME.test(bareName(account));
+  if (account.AccountSubType && UNJUDGEABLE_SUBTYPES.has(account.AccountSubType)) return true;
+  return UNJUDGEABLE_NAME.test(bareName(account));
 }
 
 function isSuspense(account: CachedAccount): boolean {
