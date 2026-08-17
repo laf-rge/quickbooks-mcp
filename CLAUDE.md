@@ -4,6 +4,31 @@
 
 This is a Model Context Protocol (MCP) server that provides Claude with access to QuickBooks Online. It enables Claude to query, create, and edit accounting data including journal entries, bills, expenses, and reports.
 
+## This Repository Is Public
+
+Everything published here is world-readable: commit messages, PR titles, bodies
+and comments, issue text, code, comments, tests and fixtures.
+
+This server is developed against a live production QuickBooks company, so real
+data is always within reach while debugging. **None of it belongs in anything
+published here.** That means no company or trade names, no location or store
+identifiers, no chart-of-accounts names or numbers taken from the live books, no
+real dollar amounts, and no customer or vendor names.
+
+Use invented fixtures instead — departments like `North`/`South`, accounts like
+`4000 Sales`, round amounts like `100.00`.
+
+The rule that matters most in practice: **when a bug is found against live data,
+describe the shape of the input, not the input.** "A sub-account name longer than
+the column width" and "a value column with no title" are what make a bug
+reproducible; pasting the real row adds nothing a reader needs and is how live
+figures end up in a public changelog. The same applies to verification evidence —
+report what was asserted, not a dump of the books.
+
+Redacting after the fact is awkward: issue and PR bodies can be edited, but
+commit messages are permanent without a history rewrite. Get it right on the way
+in.
+
 ## Git Workflow
 
 This repo uses a branch-and-PR workflow — **never commit directly to `master`**. All changes land via pull request.
@@ -60,7 +85,7 @@ All write operations (create/edit) default to `draft: true`:
 
 Names are auto-resolved to IDs using cached lookups:
 - `account_name: "Tips"` → looks up ID from cache
-- `department_name: "Santa Rosa"` → looks up ID from cache
+- `department_name: "North"` → looks up ID from cache
 - Caches are session-scoped with TTL
 
 ## Adding a New Tool
