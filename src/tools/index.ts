@@ -2,6 +2,7 @@
 
 import QuickBooks from "node-quickbooks";
 import { getClient, clearCredentialsCache, isAuthError } from "../client/index.js";
+import { formatQboError } from "../utils/errors.js";
 import {
   handleGetCompanyInfo,
   handleQuery,
@@ -117,27 +118,18 @@ export async function executeTool(
         return await executeOperation();
       } catch (retryError) {
         // If retry also fails, return that error
-        const errorMessage = typeof retryError === 'object' && retryError !== null
-          ? JSON.stringify(retryError, null, 2)
-          : String(retryError);
         return {
-          content: [{ type: "text", text: `Error after retry: ${errorMessage}` }],
+          content: [{ type: "text", text: `Error after retry: ${formatQboError(retryError)}` }],
           isError: true,
         };
       }
     }
 
-    let errorMessage: string;
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'object' && error !== null) {
-      // node-quickbooks often returns error objects with Fault property
-      errorMessage = JSON.stringify(error, null, 2);
-    } else {
-      errorMessage = String(error);
-    }
+    // formatQboError keeps QBO's Fault code/message/detail — an axios rejection
+    // reports only "Request failed with status code 400" on its own, which says
+    // nothing about which field QBO objected to.
     return {
-      content: [{ type: "text", text: `Error: ${errorMessage}` }],
+      content: [{ type: "text", text: `Error: ${formatQboError(error)}` }],
       isError: true,
     };
   }

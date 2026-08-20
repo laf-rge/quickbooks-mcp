@@ -143,6 +143,36 @@ const ENTITY_CONFIG: Record<EntityType, EntityConfig> = {
 
 const VALID_TYPES = Object.keys(ENTITY_CONFIG).join(", ");
 
+/**
+ * The body QBO wants for `?operation=delete`: the Id and the SyncToken, nothing
+ * else.
+ *
+ * This has to be built by hand because node-quickbooks' `delete` branches on its
+ * argument. Given an object it posts that object as-is; given a bare id string
+ * it re-reads the entity and posts the *whole* entity back. The echoed body is
+ * what breaks the delete: a read includes read-only JAXB extension blocks (a
+ * Purchase carries `PurchaseEx`, whose entries name `javax.xml.bind` scopes) that
+ * QBO emits but refuses to accept as input, so the round trip fails validation
+ * with an HTTP 400. Sending the minimal object avoids the echo entirely, and
+ * does so for every entity type — the extension blocks differ per entity but the
+ * hazard does not.
+ */
+function buildDeleteBody(entity: Record<string, unknown> | undefined, id: string, label: string): { Id: string; SyncToken: string } {
+  const entityId = entity?.Id != null ? String(entity.Id).trim() : "";
+  if (!entityId) {
+    throw new Error(`Could not load ${label} #${id} to delete — QuickBooks returned no Id for it.`);
+  }
+
+  // A SyncToken is mandatory on delete. QBO always returns one on a read, but if
+  // it ever comes back blank, "0" (the value a newly created entity carries) is
+  // the safe guess: a stale token is rejected outright with a fault, so a wrong
+  // guess fails loudly rather than deleting anything unexpected.
+  const rawToken = entity?.SyncToken;
+  const syncToken = rawToken != null && String(rawToken).trim() !== "" ? String(rawToken).trim() : "0";
+
+  return { Id: entityId, SyncToken: syncToken };
+}
+
 export async function handleDeleteEntity(
   client: QuickBooks,
   args: { entity_type: string; id: string; confirm?: boolean }
@@ -154,12 +184,13 @@ export async function handleDeleteEntity(
     throw new Error(`Invalid entity_type "${entity_type}". Must be one of: ${VALID_TYPES}`);
   }
 
-  if (!confirm) {
-    // Preview: fetch and show summary
-    const entity = await promisify<Record<string, unknown>>((cb) =>
-      (client as any)[config.getMethod](id, cb)
-    );
+  // Both paths need the entity: the preview to describe it, the delete to read
+  // its SyncToken. One read serves whichever path runs.
+  const entity = await promisify<Record<string, unknown>>((cb) =>
+    (client as any)[config.getMethod](id, cb)
+  );
 
+  if (!confirm) {
     const summary = config.formatSummary(entity);
     return {
       content: [{
@@ -169,9 +200,10 @@ export async function handleDeleteEntity(
     };
   }
 
-  // Execute delete
+  // Execute delete against the minimal body, so node-quickbooks forwards it
+  // untouched instead of re-reading and echoing the full entity.
   await promisify<unknown>((cb) =>
-    (client as any)[config.deleteMethod](id, cb)
+    (client as any)[config.deleteMethod](buildDeleteBody(entity, id, config.label), cb)
   );
 
   return {
