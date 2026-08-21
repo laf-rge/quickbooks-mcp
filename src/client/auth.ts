@@ -6,7 +6,6 @@ import type { QBCredentials, CredentialProvider } from "../credentials/index.js"
 import { refreshAccessToken } from "../credentials/oauth-client.js";
 import { promisify } from "./promisify.js";
 import { clearLookupCache } from "./cache.js";
-import { isQBError, extractQBErrorInfo } from "../types/index.js";
 
 // Sandbox mode for development/testing
 const useSandbox = process.env.QBO_SANDBOX === "true";
@@ -29,14 +28,13 @@ export function clearCredentialsCache(): void {
   clearLookupCache();
 }
 
-// Check if error is an authentication failure
-export function isAuthError(error: unknown): boolean {
-  if (isQBError(error)) {
-    const { code } = extractQBErrorInfo(error);
-    return code === '3200' || code === '401';
-  }
-  return false;
-}
+// Check if error is an authentication failure.
+//
+// The classification itself lives in utils/errors.ts next to the fault
+// extraction it depends on; it is re-exported here because this is where the
+// credential cache it drives lives, and because importing this module drags in
+// the whole credential provider chain.
+export { isAuthFault as isAuthError } from "../utils/errors.js";
 
 // Initialize or refresh the QuickBooks session
 export async function getClient(): Promise<QuickBooks> {

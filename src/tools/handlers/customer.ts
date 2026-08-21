@@ -1,7 +1,7 @@
 // Handlers for customer tools (create, get, edit)
 
 import QuickBooks from "node-quickbooks";
-import { promisify, resolveCustomer } from "../../client/index.js";
+import { promisify, promisifyWrite, resolveCustomer } from "../../client/index.js";
 import { buildQboUrl, outputReport } from "../../utils/index.js";
 
 interface AddressInput {
@@ -199,7 +199,7 @@ export async function handleCreateCustomer(
     return { content: [{ type: "text", text: preview }] };
   }
 
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.createCustomer(customerObj, cb)
   ) as QBCustomer;
 
@@ -397,7 +397,7 @@ export async function handleEditCustomer(
     return { content: [{ type: "text", text: previewLines.join("\n") }] };
   }
 
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.updateCustomer(updated, cb)
   ) as QBCustomer;
 

@@ -1,7 +1,7 @@
 // Handler for deleting QuickBooks entities
 
 import QuickBooks from "node-quickbooks";
-import { promisify } from "../../client/index.js";
+import { promisify, promisifyWrite } from "../../client/index.js";
 import { formatDollars, toCents } from "../../utils/index.js";
 
 type EntityType = "journal_entry" | "bill" | "invoice" | "deposit" | "sales_receipt" | "expense" | "vendor_credit" | "bill_payment" | "attachable";
@@ -202,7 +202,7 @@ export async function handleDeleteEntity(
 
   // Execute delete against the minimal body, so node-quickbooks forwards it
   // untouched instead of re-reading and echoing the full entity.
-  await promisify<unknown>((cb) =>
+  await promisifyWrite<unknown>((cb) =>
     (client as any)[config.deleteMethod](buildDeleteBody(entity, id, config.label), cb)
   );
 

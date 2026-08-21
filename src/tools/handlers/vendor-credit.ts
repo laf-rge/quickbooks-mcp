@@ -3,6 +3,7 @@
 import QuickBooks from "node-quickbooks";
 import {
   promisify,
+  promisifyWrite,
   getAccountCache,
   getDepartmentCache,
   getVendorCache,
@@ -187,7 +188,7 @@ export async function handleCreateVendorCredit(
   }
 
   // Create the vendor credit
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.createVendorCredit(vcObject, cb)
   ) as { Id: string; DocNumber?: string };
 
@@ -442,7 +443,7 @@ export async function handleEditVendorCredit(
     };
   }
 
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.updateVendorCredit(updated, cb)
   ) as { Id: string; SyncToken: string };
 

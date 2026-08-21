@@ -1,6 +1,6 @@
 // Barrel export for client module
 
-export { promisify } from './promisify.js';
+export { promisify, promisifyWrite } from './promisify.js';
 export {
   getClient,
   clearCredentialsCache,
@@ -8,6 +8,8 @@ export {
   getCompanyIdValue,
 } from './auth.js';
 export { qboRequest, qboQuery } from './rest.js';
+export { newAttemptRecord, withWriteTracking, markWriteIssued } from './write-barrier.js';
+export type { AttemptRecord } from './write-barrier.js';
 export { withRetry, isRetryableError } from './throttle.js';
 export {
   clearLookupCache,

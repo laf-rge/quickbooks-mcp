@@ -121,6 +121,32 @@ export function extractHttpStatus(error: unknown): number | undefined {
   return typeof nested === "number" ? nested : undefined;
 }
 
+// QBO's own codes for "these credentials will not do": 3200 is the v3 API's
+// AuthenticationFault code; 401 is what rest.ts synthesizes when a 401 comes
+// back with no fault body at all.
+const AUTH_FAULT_CODES = new Set(["3200", "401"]);
+
+/**
+ * Whether QuickBooks rejected the credentials rather than the request.
+ *
+ * The fault is looked up wherever it sits, which is the whole point: a call made
+ * through a node-quickbooks method rejects with the raw axios error, so an
+ * expired token arrives as a generic Error carrying the AuthenticationFault down
+ * on `response.data`. Reading only the top level classifies that as an ordinary
+ * failure and the caller never learns to refresh.
+ */
+export function isAuthFault(error: unknown): boolean {
+  const fault = extractQboFault(error);
+  if (fault) {
+    if (fault.errors.some((e) => e.code !== undefined && AUTH_FAULT_CODES.has(e.code))) return true;
+    if (fault.type && /authentication|authorization/i.test(fault.type)) return true;
+    // A fault that named some other problem *is* that problem. Don't let a
+    // transport status override QBO's own account of what went wrong.
+    return false;
+  }
+  return extractHttpStatus(error) === 401;
+}
+
 function safeStringify(value: unknown): string {
   try {
     // Cheap circular guard: axios errors reference their own config/socket.
