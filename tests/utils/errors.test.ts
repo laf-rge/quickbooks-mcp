@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatQboError, extractQboFault, extractHttpStatus } from "../../src/utils/errors.js";
+import { formatQboError, extractQboFault, extractHttpStatus, isAuthFault } from "../../src/utils/errors.js";
 
 // How an axios rejection reaches us through node-quickbooks: a generic Error
 // whose message names only the status, with the Fault hidden on response.data.
@@ -128,5 +128,58 @@ describe("extractHttpStatus", () => {
     assert.equal(extractHttpStatus(axiosLikeError(429, {})), 429);
     assert.equal(extractHttpStatus(Object.assign(new Error("x"), { status: 503 })), 503);
     assert.equal(extractHttpStatus(new Error("x")), undefined);
+  });
+});
+
+// What an expired token looks like coming back through a node-quickbooks method:
+// the fault is nested, so anything reading only the top level calls it an
+// ordinary failure and never refreshes.
+const AUTH_FAULT = {
+  Fault: {
+    Error: [
+      {
+        Message: "message=AuthenticationFailed; errorCode=003200; statusCode=401",
+        code: "3200",
+      },
+    ],
+    type: "AUTHENTICATION",
+  },
+};
+
+describe("isAuthFault", () => {
+  it("recognizes an auth fault nested under an axios response", () => {
+    assert.equal(isAuthFault(axiosLikeError(401, AUTH_FAULT)), true);
+  });
+
+  it("recognizes an auth fault that is the whole rejection value", () => {
+    assert.equal(isAuthFault(AUTH_FAULT), true);
+  });
+
+  it("recognizes an auth fault by type when the code is unfamiliar", () => {
+    assert.equal(
+      isAuthFault({ Fault: { Error: [{ Message: "nope", code: "9999" }], type: "AuthenticationFault" } }),
+      true
+    );
+  });
+
+  it("treats a bare 401 with no fault body as an auth failure", () => {
+    assert.equal(isAuthFault(axiosLikeError(401, "")), true);
+    assert.equal(isAuthFault(Object.assign(new Error("x"), { status: 401 })), true);
+  });
+
+  it("does not mistake a validation fault for an auth failure", () => {
+    assert.equal(isAuthFault(axiosLikeError(400, VALIDATION_FAULT)), false);
+  });
+
+  it("lets QBO's own account of the failure win over the transport status", () => {
+    // A fault that named a different problem is that problem, whatever status
+    // happened to carry it.
+    assert.equal(isAuthFault(axiosLikeError(401, VALIDATION_FAULT)), false);
+  });
+
+  it("says no to everything that is not a failure of credentials", () => {
+    assert.equal(isAuthFault(new Error("socket hang up")), false);
+    assert.equal(isAuthFault(axiosLikeError(429, {})), false);
+    assert.equal(isAuthFault(undefined), false);
   });
 });

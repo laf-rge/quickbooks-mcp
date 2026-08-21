@@ -1,5 +1,7 @@
 // QuickBooks report and transaction types
 
+import { extractQboFault } from "../utils/errors.js";
+
 // Common QuickBooks reference type
 export interface QBRef {
   value: string;
@@ -7,7 +9,9 @@ export interface QBRef {
 }
 
 // QuickBooks API error structure
-// QB API returns capitalized Fault.Error, but node-quickbooks may use lowercase
+// QB API returns capitalized Fault.Error, but node-quickbooks may use lowercase.
+// This describes a Fault sitting at the top level; it is not where one usually
+// arrives — see isQBError below.
 export interface QBError {
   Fault?: {
     Error?: Array<{ code?: string; Code?: string; message?: string; Message?: string; Detail?: string; detail?: string }>;
@@ -17,33 +21,24 @@ export interface QBError {
   };
 }
 
-// Type guard for QB error objects (handles both casings)
-export function isQBError(error: unknown): error is QBError {
-  if (typeof error !== 'object' || error === null) return false;
-  const err = error as Record<string, unknown>;
-  // Check capitalized (actual QB API)
-  if (err.Fault && typeof err.Fault === 'object') {
-    const fault = err.Fault as Record<string, unknown>;
-    if (Array.isArray(fault.Error)) return true;
-  }
-  // Check lowercase (node-quickbooks legacy)
-  if (err.fault && typeof err.fault === 'object') {
-    const fault = err.fault as Record<string, unknown>;
-    if (Array.isArray(fault.error)) return true;
-  }
-  return false;
+/**
+ * Whether `error` carries a QuickBooks Fault anywhere reachable.
+ *
+ * Deliberately not a type predicate: the Fault is usually *not* on the error
+ * itself. node-quickbooks rejects with the axios error, which leaves the Fault
+ * at `response.data`, so narrowing the rejection to QBError would be a lie.
+ * Detection is delegated to extractQboFault so every caller agrees on where a
+ * Fault can hide.
+ */
+export function isQBError(error: unknown): boolean {
+  return extractQboFault(error) !== undefined;
 }
 
-// Extract normalized error info from a QB error (casing-safe)
-export function extractQBErrorInfo(error: QBError): { code?: string; message?: string; detail?: string } {
-  const errors = error.Fault?.Error ?? error.fault?.error;
-  if (!errors || errors.length === 0) return {};
-  const first = errors[0];
-  return {
-    code: first.Code ?? first.code,
-    message: first.Message ?? first.message,
-    detail: first.Detail ?? first.detail,
-  };
+// Extract normalized error info from a QB error (casing- and nesting-safe)
+export function extractQBErrorInfo(error: unknown): { code?: string; message?: string; detail?: string } {
+  const first = extractQboFault(error)?.errors[0];
+  if (!first) return {};
+  return { code: first.code, message: first.message, detail: first.detail };
 }
 
 // QuickBooks entity base

@@ -3,6 +3,7 @@
 import QuickBooks from "node-quickbooks";
 import {
   promisify,
+  promisifyWrite,
   getAccountCache,
   getDepartmentCache,
   resolveAccountRef,
@@ -184,7 +185,7 @@ export async function handleCreateJournalEntry(
   }
 
   // Create the entry
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.createJournalEntry(journalEntry, cb)
   ) as { Id: string; DocNumber?: string };
 
@@ -462,7 +463,7 @@ export async function handleEditJournalEntry(
   }
 
   // Apply the update
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.updateJournalEntry(updated, cb)
   ) as { Id: string; SyncToken: string };
 

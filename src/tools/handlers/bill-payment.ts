@@ -8,6 +8,7 @@
 import QuickBooks from "node-quickbooks";
 import {
   promisify,
+  promisifyWrite,
   getAccountCache,
   getVendorCache,
   resolveAccountRef,
@@ -216,7 +217,7 @@ export async function handleCreateBillPayment(
   }
 
   // Create the bill payment
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.createBillPayment(bpObject, cb)
   ) as { Id: string; DocNumber?: string };
 

@@ -12,6 +12,7 @@ import {
   summarizeTransactionLines,
 } from "../../query/index.js";
 import { isQBError, extractQBErrorInfo } from "../../types/index.js";
+import { isAuthFault } from "../../utils/errors.js";
 
 export async function handleQuery(
   client: QuickBooks,
@@ -52,7 +53,14 @@ export async function handleQuery(
   try {
     paginationResult = await paginatedQuery(fetcher, pagination);
   } catch (error) {
-    // QB query errors (non-filterable fields, bad syntax) get enhanced messages
+    // An expired token is not a query problem. It has to reach executeTool to
+    // trigger the credential refresh; answering it with a list of filterable
+    // fields would bury the one failure that fixes itself on retry.
+    if (isAuthFault(error)) throw error;
+
+    // QB query errors (non-filterable fields, bad syntax) get enhanced messages.
+    // The fault is found wherever it sits: through a node-quickbooks find*
+    // method it arrives nested on the axios rejection, not at the top level.
     if (isQBError(error)) {
       const { code, message, detail } = extractQBErrorInfo(error);
       const errorMessage = buildQueryErrorMessage(entity, code, message, detail, error);

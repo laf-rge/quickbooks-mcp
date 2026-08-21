@@ -3,6 +3,7 @@
 import QuickBooks from "node-quickbooks";
 import {
   promisify,
+  promisifyWrite,
   getAccountCache,
   getDepartmentCache,
   getVendorCache,
@@ -180,7 +181,7 @@ export async function handleCreateExpense(
   }
 
   // Create the expense
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.createPurchase(purchaseObject, cb)
   ) as { Id: string; DocNumber?: string };
 
@@ -485,7 +486,7 @@ export async function handleEditExpense(
     };
   }
 
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.updatePurchase(updated, cb)
   ) as { Id: string; SyncToken: string };
 

@@ -3,6 +3,7 @@
 import QuickBooks from "node-quickbooks";
 import {
   promisify,
+  promisifyWrite,
   getAccountCache,
   getDepartmentCache,
   getVendorCache,
@@ -223,7 +224,7 @@ export async function handleCreateDeposit(
   }
 
   // Create the deposit
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.createDeposit(depositObject, cb)
   ) as { Id: string };
 
@@ -483,7 +484,7 @@ export async function handleEditDeposit(
     };
   }
 
-  const result = await promisify<unknown>((cb) =>
+  const result = await promisifyWrite<unknown>((cb) =>
     client.updateDeposit(updated, cb)
   ) as { Id: string; SyncToken: string };
 
