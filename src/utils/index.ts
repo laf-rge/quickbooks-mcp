@@ -5,3 +5,4 @@ export * from './files.js';
 export * from './output.js';
 export * from './money.js';
 export * from './concurrency.js';
+export * from './errors.js';

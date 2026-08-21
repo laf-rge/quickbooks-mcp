@@ -250,6 +250,38 @@ It was patched by adding the two missing fields rather than by removing the
 whitelist, so the same bug resurfaced later on `SalesReceipt.CustomerRef`. Prefer
 sparse updates over extending a copy list.
 
+## Delete Takes Id + SyncToken Only — Never Echo A Read
+
+The `?operation=delete` endpoints accept a minimal body:
+
+```json
+{ "Id": "123", "SyncToken": "3" }
+```
+
+Posting back the entity exactly as it was read is **not** equivalent. A read
+returns read-only extension blocks that QBO emits but refuses to accept as
+input — `Purchase` carries a `PurchaseEx` whose entries name `javax.xml.bind`
+JAXB scopes, and other entities have their own — so the round trip fails
+validation with an HTTP 400 that never mentions the block by name.
+
+This matters because of how `node-quickbooks` branches on its argument:
+
+```js
+module.delete = function (context, entityName, idOrEntity, callback) {
+  if (_.isObject(idOrEntity)) {
+    // posted as-is
+  } else {
+    // re-reads the entity by id and posts the WHOLE entity back
+  }
+}
+```
+
+Passing the bare id string takes the second branch and reproduces the failure.
+`delete_entity` therefore reads the entity itself (it needs the `SyncToken`, and
+the preview needs the summary) and hands the delete method a fresh
+`{ Id, SyncToken }` object, for every entity type — the extension blocks differ
+per entity, the hazard does not.
+
 ## References
 
 - [Data Queries - Intuit Developer](https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api/data-queries)
