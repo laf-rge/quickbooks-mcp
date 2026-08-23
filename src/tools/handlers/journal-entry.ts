@@ -7,8 +7,11 @@ import {
   getAccountCache,
   getDepartmentCache,
   resolveAccountRef,
+  resolveEntityInput,
+  toJournalEntryEntity,
   toQboRef,
 } from "../../client/index.js";
+import type { ResolvedEntityRef } from "../../client/index.js";
 import {
   buildQboUrl,
   validateAmount,
@@ -27,6 +30,9 @@ interface JournalEntryLine {
   department_id?: string;
   department_name?: string;
   description?: string;
+  entity_name?: string;
+  entity_id?: string;
+  entity_type?: string;
 }
 
 interface JournalEntryLineChange {
@@ -36,7 +42,24 @@ interface JournalEntryLineChange {
   posting_type?: "Debit" | "Credit";
   department_name?: string;
   description?: string;
+  entity_name?: string;
+  entity_id?: string;
+  entity_type?: string;
   delete?: boolean;
+}
+
+// The QBO shape: JournalEntryLineDetail.Entity nests the ref inside a
+// Type/EntityRef pair, unlike every other line detail's flat ReferenceType.
+interface JournalEntryLineEntity {
+  Type: string;
+  EntityRef: { value: string; name?: string };
+}
+
+// Render an entity for a preview line, e.g. " <Vendor: Acme Supply Co>".
+function formatLineEntity(entity: JournalEntryLineEntity | undefined): string {
+  if (!entity) return "";
+  const name = entity.EntityRef?.name || entity.EntityRef?.value;
+  return name ? ` <${entity.Type}: ${name}>` : "";
 }
 
 export async function handleCreateJournalEntry(
@@ -78,8 +101,15 @@ export async function handleCreateJournalEntry(
     throw new Error(`Department not found: "${name}"`);
   };
 
-  // Resolve account and department names to IDs (all lookups are from cache)
-  const resolvedLines = lines.map((line) => {
+  // Resolve account and department names to IDs (account/department lookups are
+  // from cache; entity resolution can hit the API, so this is a loop).
+  const resolvedLines: Array<JournalEntryLine & {
+    account_id: string;
+    account_num?: string;
+    amount_cents: number;
+    entity?: ResolvedEntityRef;
+  }> = [];
+  for (const line of lines) {
     let accountId = line.account_id;
     let accountName = line.account_name;
     let accountNum: string | undefined;
@@ -106,7 +136,11 @@ export async function handleCreateJournalEntry(
     // Validate and convert amount to cents
     const amountCents = validateAmount(line.amount, `Line ${accountName || accountId}`);
 
-    return {
+    // Resolve the line's entity (vendor/customer/employee). QBO requires one on
+    // any line posting to A/R or A/P and accepts it as attribution elsewhere.
+    const entity = await resolveEntityInput(client, line, `Line ${accountName || accountId}`);
+
+    resolvedLines.push({
       ...line,
       account_id: accountId!,
       account_name: accountName,
@@ -114,10 +148,11 @@ export async function handleCreateJournalEntry(
       department_id: departmentId,
       department_name: departmentName,
       amount_cents: amountCents,
+      entity: entity ?? undefined,
       // Normalize amount to exactly 2 decimal places
       amount: toDollars(amountCents)
-    };
-  });
+    });
+  }
 
   // Validate debits = credits using cents (exact integer comparison)
   const totalDebitsCents = sumCents(
@@ -149,7 +184,8 @@ export async function handleCreateJournalEntry(
           DepartmentRef: {
             value: line.department_id
           }
-        })
+        }),
+        ...(line.entity && { Entity: toJournalEntryEntity(line.entity) })
       }
     }))
   };
@@ -171,7 +207,7 @@ export async function handleCreateJournalEntry(
       "",
       "Lines:",
       ...resolvedLines.map(l =>
-        `  ${l.posting_type.padEnd(6)} ${formatAccount(l)}${l.department_id ? ` [Dept: ${l.department_name || l.department_id}]` : ""}: $${l.amount.toFixed(2)}`
+        `  ${l.posting_type.padEnd(6)} ${formatAccount(l)}${l.department_id ? ` [Dept: ${l.department_name || l.department_id}]` : ""}${l.entity ? ` <${l.entity.type}: ${l.entity.name}>` : ""}: $${l.amount.toFixed(2)}`
       ),
       "",
       doc_number
@@ -231,6 +267,7 @@ export async function handleGetJournalEntry(
         PostingType: string;
         AccountRef: { value: string; name?: string };
         DepartmentRef?: { value: string; name?: string };
+        Entity?: JournalEntryLineEntity;
       };
     }>;
   };
@@ -256,8 +293,9 @@ export async function handleGetJournalEntry(
     const acctName = detail.AccountRef.name || detail.AccountRef.value;
     const deptName = detail.DepartmentRef?.name || detail.DepartmentRef?.value;
     const deptStr = deptName ? ` [${deptName}]` : '';
+    const entityStr = formatLineEntity(detail.Entity);
     const descStr = line.Description ? ` "${line.Description}"` : '';
-    lines.push(`  Line ${line.Id}: ${detail.PostingType.padEnd(6)} ${acctName}${deptStr} $${line.Amount.toFixed(2)}${descStr}`);
+    lines.push(`  Line ${line.Id}: ${detail.PostingType.padEnd(6)} ${acctName}${deptStr}${entityStr} $${line.Amount.toFixed(2)}${descStr}`);
   }
 
   lines.push('');
@@ -301,6 +339,7 @@ export async function handleEditJournalEntry(
         PostingType: string;
         AccountRef: { value: string; name?: string };
         DepartmentRef?: { value: string; name?: string };
+        Entity?: JournalEntryLineEntity;
       };
     }>;
   };
@@ -383,6 +422,12 @@ export async function handleEditJournalEntry(
           if (change.account_name !== undefined) detail.AccountRef = resolveAcct(change.account_name);
           if (change.department_name !== undefined) detail.DepartmentRef = resolveDept(change.department_name);
 
+          // Spreading the existing detail already preserves Entity; only an
+          // explicit entity input changes it, and an empty one clears it.
+          const entity = await resolveEntityInput(client, change, `Line ${change.line_id}`);
+          if (entity === null) delete detail.Entity;
+          else if (entity) detail.Entity = toJournalEntryEntity(entity);
+
           line.JournalEntryLineDetail = detail;
           finalLines[lineIndex] = line;
         }
@@ -395,6 +440,12 @@ export async function handleEditJournalEntry(
         // Validate and normalize the amount
         const amountCents = validateAmount(change.amount, `New line for ${change.account_name}`);
 
+        const newEntity = await resolveEntityInput(
+          client,
+          change,
+          `New line for ${change.account_name}`
+        );
+
         // Id omitted for new lines - QB will assign
         const newLine = {
           Amount: toDollars(amountCents),
@@ -403,7 +454,8 @@ export async function handleEditJournalEntry(
           JournalEntryLineDetail: {
             PostingType: change.posting_type,
             AccountRef: resolveAcct(change.account_name),
-            ...(change.department_name && { DepartmentRef: resolveDept(change.department_name) })
+            ...(change.department_name && { DepartmentRef: resolveDept(change.department_name) }),
+            ...(newEntity && { Entity: toJournalEntryEntity(newEntity) })
           }
         } as typeof finalLines[0];
         finalLines.push(newLine);
@@ -450,7 +502,8 @@ export async function handleEditJournalEntry(
         const detail = line.JournalEntryLineDetail;
         const acctName = detail.AccountRef.name || detail.AccountRef.value;
         const deptStr = detail.DepartmentRef?.name ? ` [${detail.DepartmentRef.name}]` : '';
-        previewLines.push(`  ${detail.PostingType.padEnd(6)} ${acctName}${deptStr}: $${line.Amount.toFixed(2)}`);
+        const entityStr = formatLineEntity(detail.Entity);
+        previewLines.push(`  ${detail.PostingType.padEnd(6)} ${acctName}${deptStr}${entityStr}: $${line.Amount.toFixed(2)}`);
       }
     }
 

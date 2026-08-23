@@ -80,8 +80,9 @@ Each line in the `lines` array:
 | `account_name` | string | **Yes*** | Source account name or number (e.g., `"House Account"`, `"1340"`, `"6210"`). Resolved via account cache. |
 | `account_id` | string | **Yes*** | Account ID (use if known, otherwise use `account_name`). |
 | `description` | string | No | Line description text. |
-| `entity_name` | string | No | Vendor or customer name (e.g., `"Square Inc."`). Resolved via vendor cache. Sets `DepositLineDetail.Entity`. |
+| `entity_name` | string | No | Vendor, customer, or employee name. Sets `DepositLineDetail.Entity`. |
 | `entity_id` | string | No | Entity ID (use if known, otherwise use `entity_name`). |
+| `entity_type` | string | No | `Vendor` (default), `Customer`, or `Employee` — which name list to search. |
 
 \* One of `account_name` or `account_id` is required per line.
 
@@ -108,7 +109,7 @@ Follow the `handleCreateBill` pattern:
 5. For each line:
    a. Resolve account_name/id → AccountRef (account cache)
    b. Validate amount with validateAmount() (handles negatives)
-   c. If entity_name/id provided → resolve to Entity ref (vendor cache)
+   c. If entity_name/id provided → resolve to Entity ref against the list named by entity_type
 6. Build QB deposit object
 7. If draft: format preview and return
 8. Call client.createDeposit(object, callback)
@@ -208,13 +209,20 @@ The `Entity` field on deposit lines associates a vendor or customer with the lin
 - Vendor credit deposits
 - Customer payment deposits
 
-Resolution uses the existing vendor cache (same as `create_bill`):
+Resolution goes through `src/client/entity-refs.ts`, which applies the same
+precedence to each name list:
 1. Try exact ID match
 2. Try exact name match (case-insensitive)
 3. Try partial DisplayName match
 4. Throw if not found
 
-The Entity `type` defaults to `"VENDOR"` for vendor cache matches. If customer entity support is needed later, a `entity_type` parameter can be added.
+**Superseded:** this spec originally shipped vendor-only lines and deferred an
+`entity_type` parameter. It now exists on both `create_deposit` and
+`edit_deposit` and takes `Vendor` (default), `Customer`, or `Employee`; the
+resolved kind is uppercased into the `type` attribute QBO round-trips on a
+deposit line. `edit_deposit` accepts the same triple on new and existing lines,
+and a line addressed by `line_id` keeps its existing `Entity` when none is
+given.
 
 ## Edge Cases
 

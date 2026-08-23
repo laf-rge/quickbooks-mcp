@@ -6,13 +6,14 @@ import {
   promisifyWrite,
   getAccountCache,
   getDepartmentCache,
-  getVendorCache,
   resolveAccountRef,
-  resolveVendorRef,
+  resolveEntityInput,
+  toDepositEntity,
   toQboRef,
 } from "../../client/index.js";
+import type { ResolvedEntityRef } from "../../client/index.js";
 import { buildQboUrl, validateAmount, toDollars, formatDollars, toCents, sumCents, outputReport } from "../../utils/index.js";
-import type { AccountCache, DepartmentCache, VendorCache } from "../../types/index.js";
+import type { AccountCache, DepartmentCache } from "../../types/index.js";
 
 // --- Interfaces ---
 
@@ -24,14 +25,20 @@ interface CreateDepositLineInput {
   description?: string;
   entity_name?: string;
   entity_id?: string;
+  entity_type?: string;
 }
 
-// For edit_deposit lines (has line_id, no entity support)
+// For edit_deposit lines. A line_id preserves whatever Entity the line already
+// carries; entity_name/entity_id set or replace it, and an empty entity_name
+// clears it.
 interface DepositLineInput {
   line_id?: string;  // Include to update existing line (preserves Entity ref)
   amount: number;
   account_name: string;
   description?: string;
+  entity_name?: string;
+  entity_id?: string;
+  entity_type?: string;
 }
 
 interface DepositLine {
@@ -84,14 +91,6 @@ function resolveDepartmentRef(
   return { value: match.Id, name: match.FullyQualifiedName || match.Name };
 }
 
-// Deposit lines want the uppercase "VENDOR" entity type, unlike Purchase's
-// "Vendor".
-function resolveEntityRef(
-  vendorCache: VendorCache,
-  nameOrId: string
-): { value: string; name: string; type: string } {
-  return { ...resolveVendorRef(vendorCache, nameOrId), type: "VENDOR" };
-}
 
 // --- Handlers ---
 
@@ -117,10 +116,9 @@ export async function handleCreateDeposit(
   }
 
   // Parallel cache fetch
-  const [acctCache, deptCache, vendorCacheData] = await Promise.all([
+  const [acctCache, deptCache] = await Promise.all([
     getAccountCache(client),
     getDepartmentCache(client),
-    getVendorCache(client),
   ]);
 
   // Resolve deposit_to_account
@@ -133,8 +131,17 @@ export async function handleCreateDeposit(
     departmentRef = resolveDepartmentRef(deptCache, deptInput);
   }
 
-  // Resolve lines
-  const resolvedLines = lines.map((line, i) => {
+  // Resolve lines. Entity resolution is async (customers are looked up on
+  // demand rather than bulk-cached), so this is a loop rather than a map.
+  const resolvedLines: Array<{
+    accountRef: { value: string; name: string };
+    amountCents: number;
+    amount: number;
+    description?: string;
+    entityRef?: ResolvedEntityRef;
+  }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const label = `Line ${i + 1}`;
 
     // Resolve account
@@ -155,22 +162,18 @@ export async function handleCreateDeposit(
     // Validate amount
     const amountCents = validateAmount(line.amount, label);
 
-    // Resolve entity if provided
-    let entityRef: { value: string; name: string; type: string } | undefined;
-    if (line.entity_id) {
-      entityRef = resolveEntityRef(vendorCacheData, line.entity_id);
-    } else if (line.entity_name) {
-      entityRef = resolveEntityRef(vendorCacheData, line.entity_name);
-    }
+    // Resolve entity if provided. Nothing exists to preserve on create, so a
+    // cleared entity and an absent one amount to the same thing.
+    const entityRef = await resolveEntityInput(client, line, label);
 
-    return {
+    resolvedLines.push({
       accountRef,
       amountCents,
       amount: toDollars(amountCents),
       description: line.description,
-      entityRef,
-    };
-  });
+      entityRef: entityRef ?? undefined,
+    });
+  }
 
   // Calculate total for display
   const totalCents = sumCents(resolvedLines.map(l => l.amountCents));
@@ -186,7 +189,7 @@ export async function handleCreateDeposit(
         AccountRef: line.accountRef,
       };
       if (line.entityRef) {
-        depositLineDetail.Entity = line.entityRef;
+        depositLineDetail.Entity = toDepositEntity(line.entityRef);
       }
       return {
         Amount: line.amount,
@@ -208,7 +211,7 @@ export async function handleCreateDeposit(
       "",
       "Lines:",
       ...resolvedLines.map(l => {
-        const entityStr = l.entityRef ? ` [${l.entityRef.name}]` : "";
+        const entityStr = l.entityRef ? ` [${l.entityRef.type}: ${l.entityRef.name}]` : "";
         const descStr = l.description ? ` "${l.description}"` : "";
         return `  ${l.accountRef.name}: $${l.amount.toFixed(2)}${entityStr}${descStr}`;
       }),
@@ -362,7 +365,8 @@ export async function handleEditDeposit(
   // The new lines must sum to the same total as the original deposit (bank amount cannot change)
   if (newLines && newLines.length > 0) {
     // Build new lines array (full replacement)
-    // If line_id is provided, find existing line and update it (preserves Entity ref)
+    // If line_id is provided, find existing line and update it (preserves the
+    // existing Entity ref unless entity_name/entity_id says otherwise)
     // If line_id is not provided, create a new line
     const currentLines = current.Line || [];
     const currentLinesById = new Map(currentLines.map(l => [l.Id, l]));
@@ -404,6 +408,16 @@ export async function handleEditDeposit(
 
       if (input.description !== undefined) {
         line.Description = input.description;
+      }
+
+      // Entity: absent input leaves the cloned line's Entity alone (the
+      // preserve-on-line_id contract), an empty entity_name clears it, and a
+      // name/id sets it.
+      const entityRef = await resolveEntityInput(client, input, `Line ${i + 1}`);
+      if (entityRef === null) {
+        delete line.DepositLineDetail!.Entity;
+      } else if (entityRef) {
+        line.DepositLineDetail!.Entity = toDepositEntity(entityRef);
       }
 
       finalLines.push(line);
@@ -462,9 +476,12 @@ export async function handleEditDeposit(
         const detail = line.DepositLineDetail;
         if (detail) {
           const acctName = detail.AccountRef?.name || detail.AccountRef?.value || '(account)';
+          const entityStr = detail.Entity?.name
+            ? ` [${detail.Entity.type || 'Entity'}: ${detail.Entity.name}]`
+            : '';
           const deptStr = detail.ClassRef?.name ? ` [${detail.ClassRef.name}]` : '';
           const descStr = line.Description ? ` "${line.Description}"` : '';
-          previewLines.push(`  ${acctName}: $${line.Amount.toFixed(2)}${deptStr}${descStr}`);
+          previewLines.push(`  ${acctName}: $${line.Amount.toFixed(2)}${entityStr}${deptStr}${descStr}`);
           lineTotal += line.Amount;
         }
       }

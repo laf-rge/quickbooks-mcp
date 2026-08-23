@@ -8,11 +8,13 @@ import {
   CachedClass,
   CachedDepartment,
   CachedVendor,
+  CachedEmployee,
   CachedItem,
   AccountCache,
   ClassCache,
   DepartmentCache,
   VendorCache,
+  EmployeeCache,
   QBQueryResponse,
 } from "../types/index.js";
 
@@ -24,6 +26,7 @@ let departmentCache: DepartmentCache | null = null;
 let classCache: ClassCache | null = null;
 let accountCache: AccountCache | null = null;
 let vendorCache: VendorCache | null = null;
+let employeeCache: EmployeeCache | null = null;
 // Item cache: lazy per-entry lookup (not bulk-loaded like others)
 const itemCacheById = new Map<string, CachedItem>();
 const itemCacheByName = new Map<string, CachedItem>(); // lowercase key
@@ -36,6 +39,7 @@ export function clearLookupCache(): void {
   classCache = null;
   accountCache = null;
   vendorCache = null;
+  employeeCache = null;
   itemCacheById.clear();
   itemCacheByName.clear();
   customerCacheById.clear();
@@ -157,6 +161,30 @@ export async function getVendorCache(client: QuickBooks): Promise<VendorCache> {
 
   vendorCache = { items, byId, byName, fetchedAt: Date.now() };
   return vendorCache;
+}
+
+export async function getEmployeeCache(client: QuickBooks): Promise<EmployeeCache> {
+  if (employeeCache && (Date.now() - employeeCache.fetchedAt) < LOOKUP_CACHE_TTL_MS) {
+    return employeeCache;
+  }
+
+  const result = await promisify<unknown>((cb) => client.findEmployees({ fetchAll: true }, cb));
+  const items = extractQueryResults<CachedEmployee>(result, 'Employee');
+
+  const byId = new Map<string, CachedEmployee>();
+  const byName = new Map<string, CachedEmployee>();
+  for (const employee of items) {
+    byId.set(employee.Id, employee);
+    // QBO synthesises DisplayName from the name parts, but a payroll-only
+    // employee record can come back without one — skip rather than key on
+    // undefined.
+    if (employee.DisplayName) {
+      byName.set(employee.DisplayName.toLowerCase(), employee);
+    }
+  }
+
+  employeeCache = { items, byId, byName, fetchedAt: Date.now() };
+  return employeeCache;
 }
 
 // Resolve vendor by name or ID using cache
