@@ -14,7 +14,7 @@ import {
   resolveCustomerInput,
   toQboRef,
 } from "../../client/index.js";
-import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport, formatUpdateResult } from "../../utils/index.js";
 
 // A bill's payee is its header VendorRef — by definition a vendor, so there is
 // no entity_type to pick. Line-level attribution is
@@ -567,6 +567,6 @@ export async function handleEditBill(
   ) as { Id: string; SyncToken: string };
 
   return {
-    content: [{ type: "text", text: `Bill ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}` }],
+    content: [{ type: "text", text: formatUpdateResult("Bill", id, current.SyncToken, result.SyncToken, qboUrl) }],
   };
 }

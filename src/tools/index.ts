@@ -4,6 +4,8 @@ import QuickBooks from "node-quickbooks";
 import { getClient, clearCredentialsCache } from "../client/index.js";
 import { formatQboError } from "../utils/errors.js";
 import { runWithAuthRetry } from "./auth-retry.js";
+import { toolDefinitions as allToolDefinitions } from "./definitions.js";
+import { validateToolArguments, ToolArgumentError, type ToolSchema } from "./validate.js";
 import {
   handleGetCompanyInfo,
   handleQuery,
@@ -88,11 +90,30 @@ toolHandlers.set("get_customer", (client, args) => handleGetCustomer(client, arg
 toolHandlers.set("edit_customer", (client, args) => handleEditCustomer(client, args as Parameters<typeof handleEditCustomer>[1]));
 toolHandlers.set("delete_entity", (client, args) => handleDeleteEntity(client, args as Parameters<typeof handleDeleteEntity>[1]));
 
+const schemasByTool = new Map<string, ToolSchema>(
+  allToolDefinitions.map((t) => [t.name, t.inputSchema as unknown as ToolSchema])
+);
+
 // Execute tool with auth retry logic
 export async function executeTool(
   name: string,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
+  // Enforce the advertised input schema before anything runs. The MCP server
+  // does not do this for us, and a silently-dropped argument is worse than a
+  // rejected call: the tool succeeds having done something else. See validate.ts.
+  try {
+    validateToolArguments(name, schemasByTool.get(name), args);
+  } catch (error) {
+    if (error instanceof ToolArgumentError) {
+      return {
+        content: [{ type: "text", text: `Invalid arguments: ${error.message}` }],
+        isError: true,
+      };
+    }
+    throw error;
+  }
+
   // Special case: qbo_authenticate doesn't need a QuickBooks client
   if (name === "qbo_authenticate") {
     return handleAuthenticate(args as { authorization_code?: string; realm_id?: string });

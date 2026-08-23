@@ -2,7 +2,7 @@
 
 import QuickBooks from "node-quickbooks";
 import { promisify, promisifyWrite, resolveCustomer } from "../../client/index.js";
-import { buildQboUrl, outputReport } from "../../utils/index.js";
+import { buildQboUrl, outputReport, formatUpdateResult } from "../../utils/index.js";
 
 interface AddressInput {
   line1?: string;
@@ -404,7 +404,7 @@ export async function handleEditCustomer(
   return {
     content: [{
       type: "text",
-      text: `Customer ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}`,
+      text: formatUpdateResult("Customer", id, current.SyncToken, result.SyncToken, qboUrl),
     }],
   };
 }

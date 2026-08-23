@@ -11,7 +11,7 @@ import {
   resolveAccountRef,
   toQboRef,
 } from "../../client/index.js";
-import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport, formatUpdateResult } from "../../utils/index.js";
 
 interface SalesReceiptLineChange {
   line_id?: string;
@@ -500,6 +500,6 @@ export async function handleEditSalesReceipt(
   ) as { Id: string; SyncToken: string };
 
   return {
-    content: [{ type: "text", text: `Sales Receipt ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}` }],
+    content: [{ type: "text", text: formatUpdateResult("Sales Receipt", id, current.SyncToken, result.SyncToken, qboUrl) }],
   };
 }

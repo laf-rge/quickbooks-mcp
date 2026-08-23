@@ -12,7 +12,7 @@ import {
   resolveCustomerInput,
   toQboRef,
 } from "../../client/index.js";
-import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport, formatUpdateResult } from "../../utils/index.js";
 
 // As with bills: the header VendorRef is the vendor, and line-level attribution
 // is AccountBasedExpenseLineDetail.CustomerRef, which accepts customers only.
@@ -494,6 +494,6 @@ export async function handleEditVendorCredit(
   ) as { Id: string; SyncToken: string };
 
   return {
-    content: [{ type: "text", text: `Vendor Credit ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}` }],
+    content: [{ type: "text", text: formatUpdateResult("Vendor Credit", id, current.SyncToken, result.SyncToken, qboUrl) }],
   };
 }

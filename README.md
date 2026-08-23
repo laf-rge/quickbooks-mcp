@@ -362,6 +362,24 @@ internal ID. On edit tools, the rule for line parameters is:
 See [`docs/quickbooks-api-limitations.md`](docs/quickbooks-api-limitations.md#entity-attribution-is-four-different-fields)
 for the underlying QBO field shapes, which are not uniform.
 
+### Parameter Names Are Enforced
+
+Arguments are checked against the schema each tool advertises, before anything
+runs. An unknown parameter is an error that names the closest valid one, a
+missing required parameter is an error, and an `edit_*` call with no field to
+change is an error rather than a write that reports success.
+
+The alternative is silence. A handler reads the parameters it knows about, so a
+misspelled one is simply absent: a create call that puts the date under the
+wrong key posts on today's date, an as-of report asked for a date range returns
+today's balances, and an edit whose fields are all misspelled comes back
+"updated successfully" having changed nothing. None of those raise anything for
+the caller to notice.
+
+Relatedly, when QuickBooks accepts an update without advancing the record's
+`SyncToken` — meaning the payload matched what was already stored — the edit
+tools report no change instead of success.
+
 ---
 
 ## Token Refresh
