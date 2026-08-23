@@ -12,7 +12,7 @@ import {
   toQboRef,
 } from "../../client/index.js";
 import type { ResolvedEntityRef } from "../../client/index.js";
-import { buildQboUrl, validateAmount, toDollars, formatDollars, toCents, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, toCents, sumCents, outputReport, formatUpdateResult } from "../../utils/index.js";
 import type { AccountCache, DepartmentCache } from "../../types/index.js";
 
 // --- Interfaces ---
@@ -506,6 +506,6 @@ export async function handleEditDeposit(
   ) as { Id: string; SyncToken: string };
 
   return {
-    content: [{ type: "text", text: `Deposit ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}` }],
+    content: [{ type: "text", text: formatUpdateResult("Deposit", id, current.SyncToken, result.SyncToken, qboUrl) }],
   };
 }

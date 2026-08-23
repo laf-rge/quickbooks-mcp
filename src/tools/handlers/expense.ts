@@ -13,7 +13,7 @@ import {
   toPurchaseEntityRef,
   toQboRef,
 } from "../../client/index.js";
-import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport, formatUpdateResult } from "../../utils/index.js";
 
 interface CreateExpenseLine {
   account_id?: string;
@@ -554,6 +554,6 @@ export async function handleEditExpense(
   ) as { Id: string; SyncToken: string };
 
   return {
-    content: [{ type: "text", text: `Expense ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}` }],
+    content: [{ type: "text", text: formatUpdateResult("Expense", id, current.SyncToken, result.SyncToken, qboUrl) }],
   };
 }

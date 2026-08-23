@@ -9,7 +9,7 @@ import {
   resolveItem,
   resolveCustomer,
 } from "../../client/index.js";
-import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
+import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport, formatUpdateResult } from "../../utils/index.js";
 
 interface InvoiceLineChange {
   line_id?: string;
@@ -588,6 +588,6 @@ export async function handleEditInvoice(
   ) as { Id: string; SyncToken: string };
 
   return {
-    content: [{ type: "text", text: `Invoice ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}` }],
+    content: [{ type: "text", text: formatUpdateResult("Invoice", id, current.SyncToken, result.SyncToken, qboUrl) }],
   };
 }

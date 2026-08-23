@@ -20,6 +20,7 @@ import {
   toDollars,
   formatDollars,
   outputReport,
+  formatUpdateResult,
 } from "../../utils/index.js";
 
 interface JournalEntryLine {
@@ -521,6 +522,6 @@ export async function handleEditJournalEntry(
   ) as { Id: string; SyncToken: string };
 
   return {
-    content: [{ type: "text", text: `Journal Entry ${id} updated successfully.\nNew SyncToken: ${result.SyncToken}\nView in QuickBooks: ${qboUrl}` }],
+    content: [{ type: "text", text: formatUpdateResult("Journal Entry", id, current.SyncToken, result.SyncToken, qboUrl) }],
   };
 }
