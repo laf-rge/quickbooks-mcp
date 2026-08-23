@@ -11,10 +11,15 @@ import {
   resolveVendor,
   resolveAccountRef,
   resolveVendorRef,
+  resolveCustomerInput,
   toQboRef,
 } from "../../client/index.js";
 import { buildQboUrl, validateAmount, toDollars, formatDollars, sumCents, outputReport } from "../../utils/index.js";
 
+// A bill's payee is its header VendorRef — by definition a vendor, so there is
+// no entity_type to pick. Line-level attribution is
+// AccountBasedExpenseLineDetail.CustomerRef, which only accepts a customer;
+// hence customer_name rather than entity_name here.
 interface CreateBillLine {
   account_id?: string;
   account_name?: string;
@@ -22,6 +27,8 @@ interface CreateBillLine {
   description?: string;
   class_id?: string;
   class_name?: string;
+  customer_name?: string;
+  customer_id?: string;
 }
 
 interface BillLineChange {
@@ -31,6 +38,8 @@ interface BillLineChange {
   description?: string;
   class_id?: string;
   class_name?: string;
+  customer_name?: string;
+  customer_id?: string;
   delete?: boolean;
 }
 
@@ -127,8 +136,14 @@ export async function handleCreateBill(
     apAccountRef = { value: acct.value, name: acct.name };
   }
 
-  // Resolve lines
-  const resolvedLines = lines.map((line) => {
+  // Resolve lines. Customer resolution can hit the API, so this is a loop.
+  const resolvedLines: Array<CreateBillLine & {
+    account_id: string;
+    account_num?: string;
+    amount_cents: number;
+    customer_ref?: { value: string; name: string };
+  }> = [];
+  for (const line of lines) {
     let accountId = line.account_id;
     let accountName = line.account_name;
     let accountNum: string | undefined;
@@ -143,16 +158,18 @@ export async function handleCreateBill(
     }
 
     const amountCents = validateAmount(line.amount, `Line ${accountName || accountId}`);
+    const customerRef = await resolveCustomerInput(client, line, `Line ${accountName || accountId}`);
 
-    return {
+    resolvedLines.push({
       ...line,
       account_id: accountId!,
       account_name: accountName,
       account_num: accountNum,
       amount_cents: amountCents,
+      customer_ref: customerRef ?? undefined,
       amount: toDollars(amountCents),
-    };
-  });
+    });
+  }
 
   // Calculate total
   const totalCents = sumCents(resolvedLines.map(l => l.amount_cents));
@@ -178,8 +195,11 @@ export async function handleCreateBill(
             value: line.account_id,
             name: line.account_name,
           },
+          // NotBillable is deliberate even with a CustomerRef: the line
+          // attributes cost to a customer without queuing it for re-invoicing.
           BillableStatus: "NotBillable",
           ...(classRef && { ClassRef: classRef }),
+          ...(line.customer_ref && { CustomerRef: line.customer_ref }),
         },
       };
     }),
@@ -205,7 +225,7 @@ export async function handleCreateBill(
       "",
       "Lines:",
       ...resolvedLines.map(l =>
-        `  ${formatAccount(l)}: $${l.amount.toFixed(2)}${l.description ? ` "${l.description}"` : ""}`
+        `  ${formatAccount(l)}: $${l.amount.toFixed(2)}${l.customer_ref ? ` [Customer: ${l.customer_ref.name}]` : ""}${l.description ? ` "${l.description}"` : ""}`
       ),
       "",
       "Set draft=false to create this bill.",
@@ -265,11 +285,14 @@ export async function handleGetBill(
       AccountBasedExpenseLineDetail?: {
         AccountRef: { value: string; name?: string };
         DepartmentRef?: { value: string; name?: string };
+        CustomerRef?: { value: string; name?: string };
+        BillableStatus?: string;
       };
       ItemBasedExpenseLineDetail?: {
         ItemRef: { value: string; name?: string };
         Qty?: number;
         UnitPrice?: number;
+        CustomerRef?: { value: string; name?: string };
       };
     }>;
   };
@@ -297,8 +320,9 @@ export async function handleGetBill(
       const detail = line.AccountBasedExpenseLineDetail;
       const acctName = detail.AccountRef.name || detail.AccountRef.value;
       const deptStr = detail.DepartmentRef?.name ? ` [${detail.DepartmentRef.name}]` : '';
+      const custStr = detail.CustomerRef?.name ? ` [Customer: ${detail.CustomerRef.name}]` : '';
       const descStr = line.Description ? ` "${line.Description}"` : '';
-      lines.push(`  Line ${line.Id}: ${acctName}${deptStr} $${line.Amount.toFixed(2)}${descStr}`);
+      lines.push(`  Line ${line.Id}: ${acctName}${deptStr}${custStr} $${line.Amount.toFixed(2)}${descStr}`);
     } else if (line.ItemBasedExpenseLineDetail) {
       const detail = line.ItemBasedExpenseLineDetail;
       const itemName = detail.ItemRef.name || detail.ItemRef.value;
@@ -349,6 +373,8 @@ export async function handleEditBill(
       AccountBasedExpenseLineDetail?: {
         AccountRef: { value: string; name?: string };
         DepartmentRef?: { value: string; name?: string };
+        CustomerRef?: { value: string; name?: string };
+        BillableStatus?: string;
       };
     }>;
   };
@@ -433,6 +459,8 @@ export async function handleEditBill(
             AccountRef: { value: string; name?: string };
             DepartmentRef?: { value: string; name?: string };
             ClassRef?: { value: string; name?: string };
+            CustomerRef?: { value: string; name?: string };
+            BillableStatus?: string;
           };
 
           if (change.amount !== undefined) {
@@ -443,6 +471,16 @@ export async function handleEditBill(
           if (change.account_name !== undefined) detail.AccountRef = resolveAcct(change.account_name);
           const classInput = change.class_id ?? change.class_name;
           if (classInput !== undefined) detail.ClassRef = resolveClassRef(classInput);
+
+          // Spreading the existing detail already preserves CustomerRef; only an
+          // explicit customer input changes it, and an empty one clears it.
+          const customerRef = await resolveCustomerInput(client, change, `Line ${change.line_id}`);
+          if (customerRef === null) {
+            delete detail.CustomerRef;
+          } else if (customerRef) {
+            detail.CustomerRef = customerRef;
+            detail.BillableStatus = detail.BillableStatus ?? "NotBillable";
+          }
 
           line.AccountBasedExpenseLineDetail = detail;
           line.DetailType = 'AccountBasedExpenseLineDetail';
@@ -458,6 +496,11 @@ export async function handleEditBill(
 
         // Id omitted for new lines - QB will assign
         const newClassInput = change.class_id ?? change.class_name;
+        const newCustomer = await resolveCustomerInput(
+          client,
+          change,
+          `New line for ${change.account_name}`
+        );
         const newLine = {
           Amount: toDollars(amountCents),
           Description: change.description,
@@ -465,6 +508,10 @@ export async function handleEditBill(
           AccountBasedExpenseLineDetail: {
             AccountRef: resolveAcct(change.account_name),
             ...(newClassInput !== undefined && { ClassRef: resolveClassRef(newClassInput) }),
+            ...(newCustomer && {
+              CustomerRef: newCustomer,
+              BillableStatus: "NotBillable",
+            }),
           }
         } as typeof finalLines[0];
         finalLines.push(newLine);
@@ -501,7 +548,8 @@ export async function handleEditBill(
         if (detail) {
           const acctName = detail.AccountRef.name || detail.AccountRef.value;
           const deptStr = detail.DepartmentRef?.name ? ` [${detail.DepartmentRef.name}]` : '';
-          previewLines.push(`  ${acctName}${deptStr}: $${line.Amount.toFixed(2)}`);
+          const custStr = detail.CustomerRef?.name ? ` [Customer: ${detail.CustomerRef.name}]` : '';
+          previewLines.push(`  ${acctName}${deptStr}${custStr}: $${line.Amount.toFixed(2)}`);
         }
       }
     }

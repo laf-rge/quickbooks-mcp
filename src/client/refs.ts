@@ -12,7 +12,7 @@
 // internal Id first, which the handler chain deliberately does not (handlers take
 // account_id as its own parameter).
 
-import type { AccountCache, VendorCache, CachedAccount } from "../types/index.js";
+import type { AccountCache, VendorCache, EmployeeCache, CachedAccount } from "../types/index.js";
 
 // QBO ref shape. Accounts carry AcctNum along because callers echo it back in
 // their reports.
@@ -25,6 +25,39 @@ export interface AccountRef {
 export interface VendorRef {
   value: string;
   name: string;
+}
+
+// The three name-list types QBO will accept as the entity on a transaction line.
+// Item and Account are refs of their own and never appear here.
+export type EntityKind = "Vendor" | "Customer" | "Employee";
+
+export const ENTITY_KINDS: EntityKind[] = ["Vendor", "Customer", "Employee"];
+
+// A resolved entity, carrying the kind it was resolved as. The kind has to
+// travel with the ref because the id alone is ambiguous — vendor 42 and
+// customer 42 are different records, and QBO reads the type to tell them apart.
+export interface ResolvedEntityRef {
+  value: string;
+  name: string;
+  type: EntityKind;
+}
+
+// Accept an entity type in any casing ("vendor", "VENDOR") and return the
+// canonical form. Callers pass a fallback for the kind to assume when the
+// parameter is omitted; every existing tool defaults to Vendor, which is what
+// its behaviour was before entity_type existed.
+export function normalizeEntityKind(
+  input: string | undefined,
+  fallback: EntityKind = "Vendor"
+): EntityKind {
+  if (input === undefined) return fallback;
+  const match = ENTITY_KINDS.find(k => k.toLowerCase() === input.trim().toLowerCase());
+  if (!match) {
+    throw new Error(
+      `Invalid entity_type: "${input}". Must be one of: ${ENTITY_KINDS.join(", ")}`
+    );
+  }
+  return match;
 }
 
 export interface ResolveAccountOptions {
@@ -113,4 +146,21 @@ export function resolveVendorRef(cache: VendorCache, nameOrId: string): VendorRe
   if (byPartial) return { value: byPartial.Id, name: byPartial.DisplayName };
 
   throw new Error(`Vendor not found: "${nameOrId}"`);
+}
+
+// Resolve an employee by internal Id, exact DisplayName, or partial DisplayName.
+// Mirrors resolveVendorRef; employees are bulk-cached for the same reason.
+export function resolveEmployeeRef(cache: EmployeeCache, nameOrId: string): VendorRef {
+  const byId = cache.byId.get(nameOrId);
+  if (byId) return { value: byId.Id, name: byId.DisplayName };
+
+  const key = nameOrId.toLowerCase();
+
+  const byName = cache.byName.get(key);
+  if (byName) return { value: byName.Id, name: byName.DisplayName };
+
+  const byPartial = cache.items.find(e => e.DisplayName?.toLowerCase().includes(key));
+  if (byPartial) return { value: byPartial.Id, name: byPartial.DisplayName };
+
+  throw new Error(`Employee not found: "${nameOrId}"`);
 }

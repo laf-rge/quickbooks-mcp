@@ -65,6 +65,22 @@ export interface VendorCache {
   fetchedAt: number;
 }
 
+export interface CachedEmployee {
+  Id: string;
+  DisplayName: string;
+  Active?: boolean;
+}
+
+// Employees are bulk-loaded like vendors rather than lazily like customers:
+// a company has orders of magnitude fewer of them, and the line-level Entity
+// resolvers need whole-list partial matching.
+export interface EmployeeCache {
+  items: CachedEmployee[];
+  byId: Map<string, CachedEmployee>;
+  byName: Map<string, CachedEmployee>;    // lowercase key
+  fetchedAt: number;
+}
+
 export interface CachedCustomer {
   Id: string;
   DisplayName: string;

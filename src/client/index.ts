@@ -17,6 +17,7 @@ export {
   getClassCache,
   getAccountCache,
   getVendorCache,
+  getEmployeeCache,
   resolveAccount,
   resolveVendor,
   resolveItem,
@@ -27,10 +28,29 @@ export {
 export {
   resolveAccountRef,
   resolveVendorRef,
+  resolveEmployeeRef,
+  normalizeEntityKind,
+  ENTITY_KINDS,
   toQboRef,
 } from './refs.js';
 export type {
   AccountRef,
   VendorRef,
+  EntityKind,
+  ResolvedEntityRef,
   ResolveAccountOptions,
 } from './refs.js';
+export {
+  resolveEntityRef,
+  resolveCustomerRef,
+  resolveEntityInput,
+  resolveCustomerInput,
+  toDepositEntity,
+  toJournalEntryEntity,
+  toPurchaseEntityRef,
+} from './entity-refs.js';
+export type {
+  EntityInputResult,
+  EntityLineInput,
+  CustomerLineInput,
+} from './entity-refs.js';

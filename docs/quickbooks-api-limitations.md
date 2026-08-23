@@ -282,8 +282,63 @@ the preview needs the summary) and hands the delete method a fresh
 `{ Id, SyncToken }` object, for every entity type — the extension blocks differ
 per entity, the hazard does not.
 
+## Entity Attribution Is Four Different Fields
+
+"Which vendor/customer/employee is this for" is one column in the QBO UI and
+four unrelated field shapes in the API. There is no uniform `EntityRef`, and a
+payload built for one entity type is silently wrong on another — the transaction
+saves and the name column comes back blank.
+
+| Where | Field | Shape | Accepts |
+|-------|-------|-------|---------|
+| Deposit line | `DepositLineDetail.Entity` | `{ value, name, type: "VENDOR" }` | Vendor, Customer, Employee |
+| Journal entry line | `JournalEntryLineDetail.Entity` | `{ Type: "Vendor", EntityRef: { value, name } }` | Vendor, Customer, Employee |
+| Expense header | `Purchase.EntityRef` | `{ value, name, type: "Vendor" }` | Vendor, Customer, Employee |
+| Bill / vendor credit / expense line | `AccountBasedExpenseLineDetail.CustomerRef` | `{ value, name }` | **Customer only** |
+| Bill / vendor credit header | `VendorRef` | `{ value, name }` | Vendor only |
+| Invoice / sales receipt header | `CustomerRef` | `{ value, name }` | Customer only |
+
+Three things to note:
+
+- **The `type` casing differs by entity.** Deposit lines round-trip an uppercase
+  `VENDOR`/`CUSTOMER`/`EMPLOYEE`; `Purchase.EntityRef` uses PascalCase
+  `Vendor`. Journal entries do not use a `type` attribute at all — the kind goes
+  in a sibling `Type` field beside a nested `EntityRef`.
+- **Expense-style lines take a customer and nothing else.** There is no
+  vendor-on-a-bill-line. This is why those tools expose `customer_name` while
+  deposits and journal entries expose `entity_name` + `entity_type`: the
+  parameter names follow what the field can actually hold.
+- **A journal entry line posting to A/R or A/P must carry an entity.** QBO
+  rejects a receivable line with no customer and a payable line with no vendor.
+
+`src/client/entity-refs.ts` holds the resolution and one shape adapter per
+target, so a handler never has to remember which of the four it is writing.
+
+### Setting a CustomerRef can make a line billable
+
+`AccountBasedExpenseLineDetail.CustomerRef` and `BillableStatus` travel
+together. A line given a customer with no explicit `BillableStatus` can default
+to `Billable`, which queues the cost to be re-invoiced to that customer — a real
+accounting change, not a labelling one. These tools write `NotBillable`
+alongside any customer they set (and leave an existing `Billable` alone on
+edit), because they attribute cost rather than bill it.
+
+## Sales Receipt And Invoice Lines Have No Entity
+
+`SalesItemLineDetail` carries `ItemRef`, `ClassRef`, and tax fields — there is
+no per-line customer or entity. The customer is the header `CustomerRef` and
+applies to the whole transaction. `create_sales_receipt`, `edit_sales_receipt`,
+`create_invoice`, and `edit_invoice` therefore expose `customer_name` at header
+level only; the absence of a line-level parameter is the API's shape, not a gap
+in the tools.
+
+`create_bill_payment` is the same story: its lines are `LinkedTxn` references to
+the bills being paid, and the payee is the header `VendorRef`.
+
 ## References
 
 - [Data Queries - Intuit Developer](https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api/data-queries)
 - [Deep Dive into QuickBooks Online Data Queries](https://blogs.intuit.com/2017/02/08/deep-dive-sql-queries/)
 - [Purchase API Reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/Purchase)
+- [JournalEntry API Reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/most-commonly-used/journalentry)
+- [Deposit API Reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/deposit)
