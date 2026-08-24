@@ -301,7 +301,19 @@ export async function resolveCustomer(client: QuickBooks, nameOrId: string): Pro
   );
   let customers = extractQueryResults<{ Id: string; DisplayName: string; Active?: boolean }>(result, 'Customer');
 
-  // If no exact match, try LIKE for partial matching
+  // Then by Id. Every caller advertises "name or ID" and the miss below says so
+  // too, but nothing here ever queried Id: a cold lookup by id only worked if
+  // that customer happened to have been resolved by name earlier in the session
+  // and was still cached. Tried after the exact-name match so a customer
+  // literally named "42" still wins its own name.
+  if (customers.length === 0 && /^\d+$/.test(nameOrId.trim())) {
+    const byId = await promisify<unknown>((cb) =>
+      client.findCustomers([{ field: 'Id', value: nameOrId.trim(), operator: '=' }], cb)
+    );
+    customers = extractQueryResults<typeof customers[0]>(byId, 'Customer');
+  }
+
+  // If still nothing, try LIKE for partial matching
   if (customers.length === 0) {
     const partialResult = await promisify<unknown>((cb) =>
       client.findCustomers([

@@ -1659,6 +1659,64 @@ export const toolDefinitions = [
     },
   },
   {
+    name: "receive_payment",
+    description: "Record a customer payment against one or more open invoices (QuickBooks 'Receive Payment'), clearing Accounts Receivable. This is the A/R counterpart to create_bill_payment. Not a deposit — create_deposit banks money without settling an invoice — and not a sales receipt, which records a sale that was paid outright and never had an invoice. Defaults to draft: true for a preview.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        customer_name: {
+          type: "string",
+          description: "Customer display name. Either this or customer_id.",
+        },
+        customer_id: {
+          type: "string",
+          description: "Customer ID. Either this or customer_name.",
+        },
+        invoices: {
+          type: "array",
+          description: "Invoices to settle. Each amount defaults to that invoice's open balance, so the common case needs only the id.",
+          items: {
+            type: "object",
+            properties: {
+              invoice_id: { type: "string", description: "Invoice ID" },
+              amount: { type: "number", description: "Amount to apply. Defaults to the open balance; may not exceed it." },
+            },
+            required: ["invoice_id"],
+          },
+        },
+        txn_date: {
+          type: "string",
+          description: "Payment date, YYYY-MM-DD.",
+        },
+        deposit_to_account: {
+          type: "string",
+          description: "Bank account, or Undeposited Funds. Omit to let QuickBooks use its own default, which is normally Undeposited Funds.",
+        },
+        amount: {
+          type: "number",
+          description: "Payment total. Defaults to the sum applied to invoices. A larger figure is allowed and leaves the difference as an unapplied credit on the customer; a smaller one is rejected.",
+        },
+        payment_method: {
+          type: "string",
+          description: "Payment method name or ID, e.g. 'Check', 'Cash', 'EFT'.",
+        },
+        reference_no: {
+          type: "string",
+          description: "Check number or ACH reference.",
+        },
+        memo: {
+          type: "string",
+          description: "Private note on the payment.",
+        },
+        draft: {
+          type: "boolean",
+          description: "Preview without recording. Default true — shows each invoice's open balance, what is being applied, and what remains.",
+        },
+      },
+      required: ["invoices", "txn_date"],
+    },
+  },
+  {
     name: "get_bill_payment",
     description: "Fetch a single bill payment by ID with full details including SyncToken. Shows vendor, date, pay type, bank account, linked bills/credits with applied amounts, and flags any unapplied amount (payment total not matching net applied lines).",
     inputSchema: {

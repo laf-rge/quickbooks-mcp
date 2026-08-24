@@ -14,6 +14,7 @@ import {
   handleGetBalanceSheet,
   handleGetTrialBalance,
   handleGetReport,
+  handleReceivePayment,
   handleQueryAccountTransactions,
   handleAccountPeriodSummary,
   handleCreateJournalEntry,
@@ -62,6 +63,7 @@ toolHandlers.set("get_profit_loss", (client, args) => handleGetProfitLoss(client
 toolHandlers.set("get_balance_sheet", (client, args) => handleGetBalanceSheet(client, args as Parameters<typeof handleGetBalanceSheet>[1]));
 toolHandlers.set("get_trial_balance", (client, args) => handleGetTrialBalance(client, args as Parameters<typeof handleGetTrialBalance>[1]));
 toolHandlers.set("get_report", (client, args) => handleGetReport(client, args as Parameters<typeof handleGetReport>[1]));
+toolHandlers.set("receive_payment", (client, args) => handleReceivePayment(client, args as Parameters<typeof handleReceivePayment>[1]));
 toolHandlers.set("query_account_transactions", (client, args) => handleQueryAccountTransactions(client, args as Parameters<typeof handleQueryAccountTransactions>[1]));
 toolHandlers.set("account_period_summary", (client, args) => handleAccountPeriodSummary(client, args as Parameters<typeof handleAccountPeriodSummary>[1]));
 toolHandlers.set("create_journal_entry", (client, args) => handleCreateJournalEntry(client, args as Parameters<typeof handleCreateJournalEntry>[1]));
