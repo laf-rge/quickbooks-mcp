@@ -17,6 +17,9 @@ data/
 # Claude Code local settings and auto-generated files
 .claude/settings.local.json
 .claude/commands/CLAUDE.md
+# Worktrees Claude Code creates to isolate a session; checkouts of this repo,
+# never content of their own.
+.claude/worktrees/
 
 # MCP registry tokens
 .mcpregistry_*
