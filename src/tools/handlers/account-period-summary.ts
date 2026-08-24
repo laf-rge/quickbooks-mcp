@@ -47,7 +47,13 @@ interface PeriodSummary {
  *   Section (parent account) → Section (child account) → Data rows
  *
  * Columns: Date, Transaction Type, Num, Name, Memo/Description, Split, Amount, Balance
- * - "Amount" column: negative = debit, positive = credit
+ * - "Amount" column: signed by which way the account's balance moved, not by
+ *   side. Positive raises the running balance, negative lowers it, in every
+ *   classification — so the debit/credit reading depends on the account's normal
+ *   balance: up is a debit on an asset or expense, a credit on a liability,
+ *   equity or revenue account. A single fixed mapping is therefore backwards for
+ *   half the chart of accounts; `normalBalance` supplies the missing half.
+ *   See docs/quickbooks-api-limitations.md.
  * - "Balance" column: running balance, restarting at each section
  * - "Beginning Balance" row: Balance column has that section's opening balance
  * - Summary row: Amount column has net activity total; Balance column is empty
@@ -62,8 +68,22 @@ interface PeriodSummary {
  * Amounts accumulate in integer cents (see src/utils/money.ts) so a few hundred
  * float additions cannot drift the totals.
  */
+/**
+ * Which side of the ledger a rise in this account's balance represents. Assets
+ * and expenses are normally debit-balanced, everything else credit-balanced.
+ * Classification is system-defined by QBO and safe to branch on, unlike
+ * AccountSubType.
+ */
+export function normalBalance(classification: string | undefined): "debit" | "credit" {
+  return classification === "Asset" || classification === "Expense" ? "debit" : "credit";
+}
+
 // Exported for verification: this is where the rollup arithmetic lives.
-export function parseGLReport(report: GLReport): PeriodSummary {
+export function parseGLReport(
+  report: GLReport,
+  classification?: string
+): PeriodSummary {
+  const risingSide = normalBalance(classification);
   const columns = report.Columns?.Column ?? [];
 
   const amountIdx = columns.findIndex(c => c.ColTitle === "Amount");
@@ -72,6 +92,7 @@ export function parseGLReport(report: GLReport): PeriodSummary {
   let openingCents = 0;
   let totalDebitsCents = 0;
   let totalCreditsCents = 0;
+  let risingCents = 0;
   let transactionCount = 0;
 
   const rows = report.Rows?.Row ?? [];
@@ -103,10 +124,14 @@ export function parseGLReport(report: GLReport): PeriodSummary {
 
         if (amount !== 0) {
           transactionCount++;
-          if (amount < 0) {
+          // Positive means the balance rose. Whether that is a debit or a credit
+          // is a property of the account, not of the sign.
+          risingCents += toCents(amount);
+          const isDebit = amount > 0 ? risingSide === "debit" : risingSide === "credit";
+          if (isDebit) {
             totalDebitsCents += toCents(Math.abs(amount));
           } else {
-            totalCreditsCents += toCents(amount);
+            totalCreditsCents += toCents(Math.abs(amount));
           }
         }
       }
@@ -115,7 +140,10 @@ export function parseGLReport(report: GLReport): PeriodSummary {
 
   processRows(rows);
 
-  const netActivityCents = totalCreditsCents - totalDebitsCents;
+  // The signed balance movement, which is what opening + net = closing needs.
+  // It cannot be derived from the debit/credit split any more, since which side
+  // a rise lands on now varies by account, so it is accumulated directly.
+  const netActivityCents = risingCents;
 
   return {
     openingBalance: toDollars(openingCents),
@@ -170,7 +198,7 @@ export async function handleAccountPeriodSummary(
   )) as GLReport;
 
   // Parse the report
-  const summary = parseGLReport(report);
+  const summary = parseGLReport(report, resolvedAccount.Classification);
 
   // Build summary string
   const formatCurrency = (n: number) => {

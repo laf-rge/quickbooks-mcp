@@ -335,6 +335,82 @@ in the tools.
 `create_bill_payment` is the same story: its lines are `LinkedTxn` references to
 the bills being paid, and the payee is the header `VendorRef`.
 
+## Report Payloads Do Not Describe Themselves
+
+Everything below was found by running all 29 `report*` methods against a live US
+company and comparing the payload to what the report actually means. None of it
+is stated in Intuit's docs.
+
+### The General Ledger `Amount` column is signed by balance movement, not by side
+
+A positive `Amount` means the account's running balance went **up**; a negative
+one means it went down. This held for every account tested, in every
+classification — the sign says nothing about debit or credit on its own.
+
+Which side that is depends on the account's normal balance:
+
+| Classification | Balance up | Balance down |
+|---|---|---|
+| Asset, Expense | **debit** | credit |
+| Liability, Equity, Revenue | **credit** | debit |
+
+So a single fixed mapping from sign to side is right for half the chart of
+accounts and backwards for the other half. `parseGLReport` in
+`src/tools/handlers/account-period-summary.ts` treated negative as debit
+unconditionally, which is correct for liability, equity and revenue accounts and
+inverted for asset and expense ones — every bank account included. An expense
+account with a month of spending was reported as carrying that spending in
+*credits*.
+
+Note that only the **labels** were affected. `netActivity` is the signed sum
+either way, and closing balance is opening plus that sum, so both were correct
+throughout; it is the split into debits and credits that swapped.
+
+The running `Balance` column is the way to check this without trusting `Amount`:
+compare consecutive balances and see which direction a positive amount moves
+them. A balance sheet as of each end of the window confirms it independently.
+
+### A report may fill more cells than it declares columns for
+
+`Columns.Column` is not a reliable description of the rows. Sales by item
+declares **two** columns and returns **eight** cells per row. Anything that
+renders a report by walking the declared column list will silently drop every
+value past the last declared column — a wrong answer, not a formatting problem.
+Size a table by the widest row as well as by the header list.
+
+### Free-text cells contain the newlines the user typed
+
+Memo and description columns come back with embedded newlines — one cell in a
+single month's transaction list spanned 32 lines. Any layout that assumes one
+line per row breaks: values land under the wrong heading, and a row-count cap
+stops bounding the output. Collapse whitespace before laying a report out.
+
+### A date range on a point-in-time report answers as of *today*
+
+The aging, balance and inventory reports are dated by `report_date`. Given
+`start_date`/`end_date` instead, QBO does not error and does not ignore the
+request — it returns the report as of today, with `EndPeriod` set to today's
+date rather than the range's end. A caller asking for a March aging silently
+gets one dated now. Verified for `AgedPayables`, `AgedReceivables`,
+`CustomerBalance`, `VendorBalance`, and `InventoryValuationSummary`.
+`AccountList` is undated entirely and ignores both.
+
+### Two report methods do not work on a US company
+
+`reportTrialBalanceFR` and `reportTaxSummary` both answer HTTP 400 —
+region-specific reports with no US equivalent. The other 27 return data.
+
+### Report criteria are concatenated into the URL unencoded
+
+`module.reportCriteria` in node-quickbooks builds the query string with
+`s += p + '=' + criteria[p] + '&'` and no escaping whatsoever. A criterion value
+containing `&` or `=` does not arrive as a value — it adds criteria of its own,
+and a `#` truncates the query string at the fragment. Resolve names to ids where
+possible, and validate any free-text value before passing it. Note that
+`resolveDepartmentId` returns an unmatched name *unchanged* for QBO to reject,
+so it is not a safe source of ids on its own; `resolveCustomer` and
+`resolveVendor` throw instead.
+
 ## References
 
 - [Data Queries - Intuit Developer](https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api/data-queries)
@@ -342,3 +418,4 @@ the bills being paid, and the payee is the header `VendorRef`.
 - [Purchase API Reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/Purchase)
 - [JournalEntry API Reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/most-commonly-used/journalentry)
 - [Deposit API Reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/deposit)
+- [Reports API Reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/generalledger)

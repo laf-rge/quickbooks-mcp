@@ -63,12 +63,18 @@ never puts the account in the payload:
 | Item-driven COGS / inventory | Derived from the Item's configured accounts, not stated on the line. |
 
 Consequence: **`query_account_transactions` can never be complete on an A/R or
-sales-tax-liability account.** A/P is fine — `APAccountRef` is explicit on Bill,
-BillPayment, and VendorCredit.
+sales-tax-liability account.** **A/P is only half fine.** `APAccountRef` is
+explicit on Bill and VendorCredit — the credit side — but **BillPayment does not
+carry it at all**, so the debit side of every bill payment is invisible. Measured
+on a live company over one month: A/P credits matched the general ledger to the
+cent, while 97.7% of A/P debits were missing.
 
-The tool now says so in its output when the resolved account is Accounts
-Receivable or Other Current Liability, so a short result is not mistaken for no
-activity. For a complete figure on those accounts, use `account_period_summary`,
+The tool now says so in its output. It used to name only Accounts Receivable —
+this document claimed Other Current Liability too, but no such branch existed —
+and naming account types at all only ever covered the gaps somebody had already
+found. Every call is now cross-checked against the General Ledger for the same
+account and period, and reports a shortfall in the figures whatever its cause.
+That is what surfaced the BillPayment gap above. For a complete figure on those accounts, use `account_period_summary`,
 which reads the General Ledger report. Reports show every posting regardless of
 whether the account appears in the entity JSON — a GL-report-backed drill-down
 is the correct long-term fix for this whole class of gap.
@@ -92,7 +98,7 @@ does the aging arithmetic.
 | Bill | ✅ | header `APAccountRef` (credit) + expense lines (debit) |
 | Invoice | ✅ | `DepositToAccountRef`/`Deposit` (debit) + income lines (credit). A/R invisible. |
 | Payment | ✅ | header `DepositToAccountRef` (debit). A/R invisible. |
-| BillPayment | ✅ | `APAccountRef` (debit) + `CheckPayment.BankAccountRef` or `CreditCardPayment.CCAccountRef` (credit) |
+| BillPayment | ⚠️ | `CheckPayment.BankAccountRef` or `CreditCardPayment.CCAccountRef` (credit) only. **No `APAccountRef` in the payload** — the A/P debit is invisible. |
 | VendorCredit | ✅ | `APAccountRef` (debit) + expense lines (credit) |
 | Transfer | ✅ | `ToAccountRef` (debit) + `FromAccountRef` (credit) |
 | CreditMemo | ✅ | income lines (debit). A/R invisible. |
