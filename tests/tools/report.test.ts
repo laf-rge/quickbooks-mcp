@@ -132,6 +132,89 @@ describe("handleGetReport — criteria that would corrupt the query", () => {
   });
 });
 
+describe("handleGetReport — inputs nothing else validates", () => {
+  // validateToolArguments checks required and unknown keys, not enums or types.
+  it("rejects a detail_level outside the enum rather than quietly summarizing", async () => {
+    const { client } = fakeClient();
+    for (const bad of ["detailed", "FULL", "all"]) {
+      const message = await reject(() =>
+        handleGetReport(client, { report: "aged_payables", detail_level: bad })
+      );
+      assert.match(message, /Invalid detail_level/);
+    }
+  });
+
+  it("rejects a max_rows that is not a number", async () => {
+    // Number("abc") is NaN, and slice(0, NaN) is empty: the table used to come
+    // back as headings plus a notice claiming 0 of N rows.
+    const { client } = fakeClient();
+    for (const bad of ["abc", 0, -3, Infinity]) {
+      const message = await reject(() =>
+        handleGetReport(client, { report: "aged_payables", max_rows: bad as number })
+      );
+      assert.match(message, /Invalid max_rows/);
+    }
+  });
+
+  it("accepts a numeric string, which is what a loose client sends", async () => {
+    const { client } = fakeClient();
+    await handleGetReport(client, { report: "aged_payables", max_rows: "50" as unknown as number });
+  });
+});
+
+describe("handleGetReport — a range on a point-in-time report", () => {
+  // QBO does not ignore a range on these reports, it answers as of today, so a
+  // caller asking for a March aging silently gets one dated now.
+  it("refuses start_date on its own", async () => {
+    const { client } = fakeClient();
+    const message = await reject(() =>
+      handleGetReport(client, { report: "aged_payables", start_date: "2026-03-01" })
+    );
+    assert.match(message, /dated at a single point in time/);
+  });
+
+  it("still takes end_date as the as-of date", async () => {
+    const { client, seen } = fakeClient();
+    await handleGetReport(client, { report: "aged_payables", start_date: "2026-03-01", end_date: "2026-03-31" });
+    assert.deepEqual(seen.reportAgedPayables, { report_date: "2026-03-31" });
+  });
+});
+
+describe("handleGetReport — a department that resolves to nothing", () => {
+  // resolveDepartmentId hands back an unmatched name unchanged for QBO to
+  // reject, so it can carry arbitrary text into a URL that is never encoded.
+  function clientWithNoDepartments() {
+    const seen: Record<string, Record<string, string>> = {};
+    return {
+      client: {
+        reportAgedPayables: (options: Record<string, string>, cb: Callback<unknown>) => {
+          seen.reportAgedPayables = options;
+          cb(null, REPORT);
+        },
+        findDepartments: (_c: object, cb: Callback<unknown>) =>
+          cb(null, { QueryResponse: { Department: [] } }),
+      } as unknown as QuickBooks,
+      seen,
+    };
+  }
+
+  it("refuses a department name that would add criteria of its own", async () => {
+    const { client } = clientWithNoDepartments();
+    const message = await reject(() =>
+      handleGetReport(client, { report: "aged_payables", department: "1&start_date=1900-01-01" })
+    );
+    assert.match(message, /report criteria may contain only/);
+  });
+
+  it("refuses one that would truncate the query at a fragment", async () => {
+    const { client } = clientWithNoDepartments();
+    const message = await reject(() =>
+      handleGetReport(client, { report: "aged_payables", department: "North#frag" })
+    );
+    assert.match(message, /report criteria may contain only/);
+  });
+});
+
 describe("handleGetReport — response size", () => {
   const wide = {
     Header: { ReportName: "TransactionList" },

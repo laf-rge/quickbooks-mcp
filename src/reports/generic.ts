@@ -19,7 +19,11 @@
 import { QBReport, QBReportRow, QBReportColData } from "../types/index.js";
 import { elideAccountName } from "./trial-balance.js";
 
-// Labels share the line with every value column, so they get a tight budget.
+// The label column is the one a reader scans, and on a general ledger it holds
+// account paths that a blunt truncation would render indistinguishable, so it
+// gets both a wider budget than a value cell and elideAccountName's
+// path-collapsing. It is applied after indentation, to the string that actually
+// occupies the column.
 const LABEL_CAP = 45;
 
 // Ceiling on a single value cell. Memo and description columns carry free text
@@ -33,6 +37,16 @@ const VALUE_CAP = 40;
 // spend the context window on a report the caller can read in full from the
 // payload. See the truncation notice for how to get past it.
 export const DEFAULT_MAX_ROWS = 200;
+
+// Ceiling on the rendered table in characters.
+//
+// A row count alone does not bound a response, because nothing bounds the width
+// of a row: summarize_by month over a few years gives a column per month, and at
+// forty-odd columns a couple of thousand rows is larger than the context window
+// it was meant to protect. The budget is what actually holds, and it leaves the
+// narrow reports — where a row costs ~40 characters — free to render most of a
+// thousand rows before it binds at all.
+export const MAX_RENDER_CHARS = 40_000;
 
 export interface GenericReportOptions {
   /** Fallback title when the payload carries no ReportName. */
@@ -58,15 +72,21 @@ interface TableRow {
 // them, and a cell containing one splits its row in half — every column after it
 // lands under the wrong heading, and the row count that bounds this report's
 // size stops matching the lines actually emitted.
+function flatten(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
 function clean(value: string | undefined): string {
-  const flat = (value ?? "").replace(/\s+/g, " ").trim();
+  const flat = flatten(value);
   return flat.length > VALUE_CAP ? `${flat.slice(0, VALUE_CAP - 1)}…` : flat;
 }
 
 function cellsOf(cols: QBReportColData[] | undefined): { label: string; values: string[] } {
   const cells = cols ?? [];
   return {
-    label: clean(cells[0]?.value),
+    // Flattened but not truncated here: the label is cut to LABEL_CAP later,
+    // once the indent it shares the column with is known.
+    label: flatten(cells[0]?.value),
     // An empty cell stays an empty string: dropping it would shift every later
     // value one column left and file it under the wrong heading.
     values: cells.slice(1).map(c => clean(c.value)),
@@ -79,15 +99,34 @@ function collect(
   rows: QBReportRow[],
   depth: number,
   full: boolean,
-  out: TableRow[]
+  out: TableRow[],
+  // Counts what 'summary' left out, so the response can say so instead of
+  // looking complete.
+  hidden: { count: number }
 ): void {
   for (const row of rows) {
     const nested = row.Rows?.Row;
 
     if (nested && nested.length > 0) {
       const header = cellsOf(row.Header?.ColData);
-      if (header.label) out.push({ indent: depth, label: header.label, values: header.values });
-      collect(nested, depth + 1, full, out);
+      // Guard on the values too, not just the label. A header cell can be blank
+      // while the columns beside it are populated, and gating on the label alone
+      // would drop those figures without a word — the same test Summary below
+      // already makes.
+      if (header.label || header.values.some(Boolean)) {
+        out.push({ indent: depth, label: header.label, values: header.values });
+      }
+
+      // A row may carry its own cells *and* children. account-period-summary
+      // parses the same General Ledger payload and handles that shape, so it is
+      // reachable; skipping straight to the children would lose this row's
+      // figures silently.
+      const own = cellsOf(row.ColData);
+      if (own.label || own.values.some(Boolean)) {
+        out.push({ indent: depth, label: own.label, values: own.values });
+      }
+
+      collect(nested, depth + 1, full, out, hidden);
       const summary = cellsOf(row.Summary?.ColData);
       if (summary.label || summary.values.some(Boolean)) {
         out.push({
@@ -110,7 +149,10 @@ function collect(
 
     // Leaf. Nested leaves are the bulk of a detail report, so they are what
     // 'summary' drops; a top-level leaf is kept either way.
-    if (depth > 0 && !full) continue;
+    if (depth > 0 && !full) {
+      hidden.count++;
+      continue;
+    }
     const leaf = cellsOf(row.ColData);
     if (leaf.label || leaf.values.some(Boolean)) {
       out.push({ indent: depth, label: leaf.label, values: leaf.values });
@@ -118,7 +160,9 @@ function collect(
   }
 }
 
-function renderTable(rows: TableRow[], titles: string[], out: string[]): void {
+// Returns the number of rows actually rendered, which the caller needs to
+// report the shortfall honestly.
+function renderTable(rows: TableRow[], titles: string[], out: string[]): number {
   const labelTitle = titles[0] ?? "";
 
   // Size the table by the widest row as well as by the declared columns.
@@ -153,12 +197,21 @@ function renderTable(rows: TableRow[], titles: string[], out: string[]): void {
       .map((w, i) => (values[i] ?? "").padStart(w))
       .join("  ")}`.trimEnd();
 
+  // Every row is padded to the same width, so one row's cost is the whole
+  // table's cost divided by its length — which makes the budget a row count
+  // that can be applied before anything is emitted.
+  const perRow = labelWidth + 2 + widths.reduce((sum, w) => sum + w + 2, 0);
+  const affordable = Math.max(1, Math.floor(MAX_RENDER_CHARS / Math.max(1, perRow)));
+  const shown = Math.min(rows.length, affordable);
+
   out.push("");
   // A report with no value columns and no column heading — a degenerate one QBO
   // returns when nothing matched — would otherwise open with a blank line.
   const heading = line(labelTitle, valueTitles);
   if (heading) out.push(heading);
-  rows.forEach((r, i) => out.push(line(labels[i], r.values)));
+  for (let i = 0; i < shown; i++) out.push(line(labels[i], rows[i].values));
+
+  return shown;
 }
 
 export function renderGenericReport(
@@ -179,7 +232,9 @@ export function renderGenericReport(
 
   const titles = (report.Columns?.Column ?? []).map(c => clean(c.ColTitle));
   const rows: TableRow[] = [];
-  collect(report.Rows?.Row ?? [], 0, detail === "full", rows);
+  const hiddenBySummary = { count: 0 };
+  collect(report.Rows?.Row ?? [], 0, detail === "full", rows, hiddenBySummary);
+  const hidden = hiddenBySummary.count;
 
   if (rows.length === 0) {
     lines.push("");
@@ -188,14 +243,21 @@ export function renderGenericReport(
   }
 
   const kept = rows.slice(0, Math.max(1, maxRows));
-  renderTable(kept, titles, lines);
+  const shown = renderTable(kept, titles, lines);
 
-  if (kept.length < rows.length) {
+  if (shown < rows.length) {
     lines.push("");
     lines.push(
-      `Showing ${kept.length} of ${rows.length} rows. Raise max_rows, narrow the ` +
+      `Showing ${shown} of ${rows.length} rows. Raise max_rows, narrow the ` +
         `date range, or read the full report from the payload.`
     );
+  }
+
+  // Rows dropped by 'summary' never reach the count above, so without this the
+  // response looks complete and nothing hints that the detail exists.
+  if (detail === "summary" && hidden > 0) {
+    lines.push("");
+    lines.push(`${hidden} rows nested under these sections are not shown — pass detail_level="full" for them.`);
   }
 
   return lines.join("\n");

@@ -96,3 +96,19 @@ for (const name of REPORT_NAMES) {
 export function resolveReportName(input: string): string | undefined {
   return BY_NORMALIZED.get(input.trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
 }
+
+/**
+ * The three reports deliberately absent from the catalog, and the tool to use
+ * instead. Named explicitly so a caller asking for one is sent straight to the
+ * right tool: a nearest-name suggestion answers `vendor_balance` for
+ * `trial_balance`, which is a different report the caller may well go on to run.
+ */
+const DEDICATED_TOOLS: Record<string, string> = {
+  profitandloss: "get_profit_loss",
+  balancesheet: "get_balance_sheet",
+  trialbalance: "get_trial_balance",
+};
+
+export function dedicatedToolFor(input: string): string | undefined {
+  return DEDICATED_TOOLS[input.trim().toLowerCase().replace(/[^a-z0-9]/g, "")];
+}

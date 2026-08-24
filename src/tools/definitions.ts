@@ -153,63 +153,65 @@ export const toolDefinitions = [
   },
   {
     name: "get_report",
-    description: "Run a QuickBooks report that has no dedicated tool — aging (A/R and A/P), customer and vendor balances, transaction lists, the general ledger, the journal, sales by customer/item/class/department, cash flow, and the detail variants. Answers 'what is outstanding and how old is it', which the entity query tools cannot: a report sees every posting, including the A/R and A/P sides that carry no account reference in the entity JSON. Profit and Loss, Balance Sheet and Trial Balance are NOT here — they have dedicated tools that render them better.",
+    description: "Run a QuickBooks report that has no dedicated tool: A/R and A/P aging, customer and vendor balances, transaction lists, general ledger, journal, sales by customer/item/class/department, cash flow, and detail variants. Answers what is outstanding and how old it is, which the entity query tools cannot — a report sees postings that carry no account reference in entity JSON. Profit and Loss, Balance Sheet and Trial Balance have their own tools.",
     inputSchema: {
       type: "object",
       properties: {
         report: {
           type: "string",
           enum: REPORT_NAMES,
-          description: "Which report to run. QuickBooks' own spelling ('AgedPayables') is accepted too.",
+          description: "QuickBooks' own spelling ('AgedPayables') is accepted too.",
         },
         start_date: {
           type: "string",
-          description: "Start of the period, YYYY-MM-DD. For a report dated at a single point in time (the aging, balance and inventory reports) use report_date instead.",
+          description: "YYYY-MM-DD. Range reports only.",
         },
         end_date: {
           type: "string",
-          description: "End of the period, YYYY-MM-DD.",
+          description: "YYYY-MM-DD.",
         },
         report_date: {
           type: "string",
-          description: "As-of date, YYYY-MM-DD, for the point-in-time reports: aged_payables, aged_payable_detail, aged_receivables, aged_receivable_detail, customer_balance, customer_balance_detail, vendor_balance, vendor_balance_detail, inventory_valuation_summary. Rejected on the others rather than ignored.",
+          description: "YYYY-MM-DD as-of date for the aging, balance and inventory reports; rejected on the rest.",
         },
         date_macro: {
           type: "string",
-          description: "A named period in place of explicit dates, e.g. 'Last Month', 'This Fiscal Year-to-date'.",
+          description: "Named period instead of dates, e.g. 'Last Month'.",
         },
         accounting_method: {
           type: "string",
-          description: "Accounting method: 'Accrual' (default) or 'Cash'.",
+          enum: ["Accrual", "Cash"],
+          description: "Default Accrual.",
         },
         summarize_by: {
           type: "string",
-          description: "How to summarize columns where the report supports it: 'Total', 'Month', 'Week', 'Quarter', 'Year', 'Customers', 'Vendors', 'Classes', 'Departments', 'Employees', 'ProductsAndServices'.",
+          enum: ["Total", "Month", "Week", "Days", "Quarter", "Year", "Customers", "Vendors", "Classes", "Departments", "Employees", "ProductsAndServices"],
+          description: "Column breakdown, where the report supports it.",
         },
         department: {
           type: "string",
-          description: "Filter to one department/location, by name or ID.",
+          description: "Department/location name or ID.",
         },
         customer: {
           type: "string",
-          description: "Filter to one customer, by name or ID.",
+          description: "Customer name or ID.",
         },
         vendor: {
           type: "string",
-          description: "Filter to one vendor, by name or ID.",
+          description: "Vendor name or ID.",
         },
         detail_level: {
           type: "string",
           enum: ["summary", "full"],
-          description: "'summary' (default) prints section headers and their subtotals. 'full' also prints the leaf rows nested under each section — on a detail report that is thousands of rows. Rows at the top level are printed either way, so a flat report such as aged_payables is complete at 'summary'.",
+          description: "'summary' (default) prints section headers and subtotals; 'full' adds the leaf rows nested under them, which on a detail report is thousands. Top-level rows always print, so a flat report is complete at 'summary'.",
         },
         max_rows: {
           type: "number",
-          description: "Cap on rendered table rows, default 200, maximum 2000. The response says how many rows were withheld. The full report is always in the payload — a file path in stdio, include_raw over HTTP.",
+          description: "Rendered row cap, default 200, max 2000.",
         },
         include_raw: {
           type: "boolean",
-          description: "Append the full raw report payload. Off by default: the rendered table already carries the numbers, and the raw copy roughly doubles the response.",
+          description: "Append the raw report payload. Off by default; the table already carries the numbers.",
         },
       },
       required: ["report"],

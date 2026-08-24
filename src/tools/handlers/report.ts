@@ -13,6 +13,7 @@ import {
   DEFAULT_MAX_ROWS,
   REPORT_CATALOG,
   REPORT_NAMES,
+  dedicatedToolFor,
   renderGenericReport,
   resolveReportName,
 } from "../../reports/index.js";
@@ -67,7 +68,7 @@ export async function handleGetReport(
   } = args;
 
   if (!report) {
-    throw new Error(`Missing required parameter "report". One of: ${REPORT_NAMES.join(", ")}`);
+    throw new Error(`Missing required parameter "report" for tool get_report.`);
   }
 
   // validateToolArguments deliberately leaves enums to the handler, so the
@@ -75,12 +76,18 @@ export async function handleGetReport(
   // treatment a misspelled parameter name gets.
   const key = resolveReportName(report);
   if (!key) {
+    // Checked before the nearest-name search, which would otherwise answer
+    // "vendor_balance" for "trial_balance" — a real report, wrong answer, and
+    // one the caller may go on to run.
+    const dedicated = dedicatedToolFor(report);
+    if (dedicated) {
+      throw new Error(`"${report}" has a dedicated tool — use ${dedicated} instead of get_report.`);
+    }
     const suggestion = suggestClosest(report, REPORT_NAMES);
     throw new Error(
-      `Unknown report "${report}"${suggestion ? `. Did you mean "${suggestion}"?` : "."} ` +
-        `Supported: ${REPORT_NAMES.join(", ")}. ` +
-        `Profit and Loss, Balance Sheet and Trial Balance have dedicated tools ` +
-        `(get_profit_loss, get_balance_sheet, get_trial_balance).`
+      suggestion
+        ? `Unknown report "${report}". Did you mean "${suggestion}"?`
+        : `Unknown report "${report}". Supported: ${REPORT_NAMES.join(", ")}.`
     );
   }
 
@@ -91,6 +98,15 @@ export async function handleGetReport(
   // Accept end_date as report_date there so a caller who reaches for the range
   // parameter is not silently answered as of today.
   if (spec.pointInTime) {
+    // QBO does not merely ignore a range on these reports — it answers as of
+    // today, so a caller asking for a March aging silently gets August's. Taking
+    // end_date as the as-of date covers the natural mistake; start_date alone
+    // has no such reading and is refused rather than dropped.
+    if (start_date && !report_date && !end_date) {
+      throw new Error(
+        `Report "${key}" is dated at a single point in time — pass report_date, not start_date.`
+      );
+    }
     const asOf = report_date ?? end_date;
     if (asOf) options.report_date = criterion("report_date", asOf);
   } else {
@@ -106,9 +122,32 @@ export async function handleGetReport(
   if (date_macro) options.date_macro = criterion("date_macro", date_macro);
   if (accounting_method) options.accounting_method = criterion("accounting_method", accounting_method);
   if (summarize_by) options.summarize_column_by = criterion("summarize_by", summarize_by);
-  if (department) options.department = await resolveDepartmentId(client, department);
+  // resolveDepartmentId returns an unmatched name unchanged for QBO to reject,
+  // so unlike resolveCustomer/resolveVendor — which throw — it can hand back
+  // arbitrary text. It gets the same guard as any other free-text criterion.
+  if (department) {
+    options.department = criterion("department", await resolveDepartmentId(client, department));
+  }
   if (customer) options.customer = (await resolveCustomer(client, customer)).value;
   if (vendor) options.vendor = (await resolveVendor(client, vendor)).value;
+
+  // validateToolArguments checks neither enums nor types, so both are checked
+  // here. Left alone, "detailed" silently renders a summary, and a max_rows that
+  // is not a number becomes NaN, then an empty slice: a table of headings and a
+  // notice claiming 0 of N rows.
+  if (detail_level !== undefined && detail_level !== "summary" && detail_level !== "full") {
+    throw new Error(`Invalid detail_level "${detail_level}" — expected "summary" or "full".`);
+  }
+  const detail = detail_level === "full" ? "full" : "summary";
+
+  let maxRows = DEFAULT_MAX_ROWS;
+  if (max_rows !== undefined) {
+    const asNumber = Number(max_rows);
+    if (!Number.isFinite(asNumber) || asNumber < 1) {
+      throw new Error(`Invalid max_rows "${max_rows}" — expected a positive number.`);
+    }
+    maxRows = Math.min(Math.floor(asNumber), MAX_ROWS_CEILING);
+  }
 
   const result = (await withRetry(() =>
     promisify<unknown>((cb) => client[spec.method](options, cb))
@@ -116,8 +155,8 @@ export async function handleGetReport(
 
   const summary = renderGenericReport(result, {
     label: spec.label,
-    detail: detail_level === "full" ? "full" : "summary",
-    maxRows: Math.min(max_rows ?? DEFAULT_MAX_ROWS, MAX_ROWS_CEILING),
+    detail: detail,
+    maxRows,
   });
 
   return outputReport(`report-${key}`, result, summary, { includeRaw: include_raw });

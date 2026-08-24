@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { REPORT_CATALOG, REPORT_NAMES, resolveReportName } from "../../src/reports/catalog.js";
+import { REPORT_CATALOG, REPORT_NAMES, dedicatedToolFor, resolveReportName } from "../../src/reports/catalog.js";
 
 describe("report catalog", () => {
   it("resolves its own key", () => {
@@ -25,6 +25,18 @@ describe("report catalog", () => {
 
   it("does not resolve an unknown name", () => {
     assert.equal(resolveReportName("balance_sheet_v2"), undefined);
+  });
+
+  it("names the tool to use for a report it deliberately omits", () => {
+    // A nearest-name search answers "vendor_balance" for "trial_balance" — a
+    // real report, wrong answer, and one the caller may go on to run.
+    assert.equal(dedicatedToolFor("trial_balance"), "get_trial_balance");
+    assert.equal(dedicatedToolFor("TrialBalance"), "get_trial_balance");
+    assert.equal(dedicatedToolFor("profit_and_loss"), "get_profit_loss");
+    assert.equal(dedicatedToolFor("balance_sheet"), "get_balance_sheet");
+    assert.equal(dedicatedToolFor("aged_payables"), undefined);
+    // The detail variant has no tool of its own and must not be diverted.
+    assert.equal(dedicatedToolFor("profit_and_loss_detail"), undefined);
   });
 
   it("omits the reports that have a dedicated tool", () => {

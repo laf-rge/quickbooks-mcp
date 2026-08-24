@@ -226,3 +226,146 @@ describe("renderGenericReport — a payload that declares fewer columns than it 
     assert.equal(out[blank + 1], "TOTAL");
   });
 });
+
+describe("renderGenericReport — rows that carry cells and children at once", () => {
+  it("keeps a row's own figures when it also has children", () => {
+    // account-period-summary parses the same General Ledger payload and handles
+    // this shape, so it is reachable. Recursing straight past ColData drops the
+    // row's own numbers with no notice.
+    const both = {
+      Header: { ReportName: "GeneralLedger" },
+      Columns: cols("", "Amount"),
+      Rows: {
+        Row: [
+          {
+            ColData: [{ value: "Own row" }, { value: "999.00" }],
+            Rows: { Row: [data("Child", "1.00")] },
+            Summary: { ColData: [{ value: "Total" }, { value: "1.00" }] },
+          },
+        ],
+      },
+    } as unknown as QBReport;
+
+    const out = lines(both, { detail: "full" });
+    assert.ok(out.some(l => l.includes("Own row") && l.includes("999.00")), "the row's own cells were dropped");
+    assert.ok(out.some(l => l.includes("Child")));
+  });
+
+  it("keeps a section header's figures when its label cell is blank", () => {
+    const blankHeader = {
+      Header: { ReportName: "GeneralLedger" },
+      Columns: cols("", "Debit", "Credit"),
+      Rows: {
+        Row: [
+          {
+            Header: { ColData: [{ value: "" }, { value: "111.00" }, { value: "222.00" }] },
+            Rows: { Row: [data("Child", "1.00", "0.00")] },
+            Summary: { ColData: [{ value: "Total" }, { value: "1.00" }, { value: "0.00" }] },
+          },
+        ],
+      },
+    } as unknown as QBReport;
+
+    const out = lines(blankHeader, { detail: "full" });
+    assert.ok(out.some(l => l.includes("111.00") && l.includes("222.00")), "blank-labelled header row was dropped");
+  });
+});
+
+describe("renderGenericReport — the byte budget", () => {
+  // A row cap alone does not bound a response: nothing bounds a row's width.
+  // summarize_by month over a few years gives a column per month.
+  const wide = {
+    Header: { ReportName: "ProfitAndLossDetail" },
+    Columns: cols("", ...Array.from({ length: 37 }, (_, i) => `Col ${i}`)),
+    Rows: {
+      Row: Array.from({ length: 2000 }, (_, r) =>
+        data(`Row ${r}`, ...Array.from({ length: 37 }, () => "1234567.89"))
+      ),
+    },
+  } as unknown as QBReport;
+
+  it("bounds a wide table that the row cap alone would not", () => {
+    const text = renderGenericReport(wide, { maxRows: 2000 });
+    assert.ok(text.length < 60_000, `rendered ${text.length} chars; the budget did not bind`);
+  });
+
+  it("still reports the shortfall honestly when the budget cuts in", () => {
+    const out = renderGenericReport(wide, { maxRows: 2000 }).split("\n");
+    const notice = out.find(l => l.startsWith("Showing "))!;
+    assert.ok(notice, "expected a truncation notice");
+    assert.match(notice, /of 2000 rows/);
+    // The count in the notice must be the count actually printed.
+    const shown = Number(notice.match(/Showing (\d+) of/)![1]);
+    assert.equal(out.filter(l => l.startsWith("Row ")).length, shown);
+  });
+
+  it("leaves a narrow report free to fill the row cap", () => {
+    const narrow = {
+      Header: { ReportName: "VendorBalance" },
+      Columns: cols("", "Total"),
+      Rows: { Row: Array.from({ length: 200 }, (_, i) => data(`Vendor ${i}`, "10.00")) },
+    } as unknown as QBReport;
+    const out = renderGenericReport(narrow, { maxRows: 200 }).split("\n");
+    assert.equal(out.filter(l => l.startsWith("Vendor ")).length, 200);
+    assert.ok(!out.some(l => l.startsWith("Showing ")));
+  });
+});
+
+describe("renderGenericReport — telling the reader what summary hid", () => {
+  const nested = {
+    Header: { ReportName: "GeneralLedger" },
+    Columns: cols("", "Amount"),
+    Rows: {
+      Row: [
+        {
+          Header: { ColData: [{ value: "1010 Checking" }] },
+          Rows: { Row: Array.from({ length: 400 }, (_, i) => data(`Txn ${i}`, "1.00")) },
+          Summary: { ColData: [{ value: "Total for 1010 Checking" }, { value: "400.00" }] },
+        },
+      ],
+    },
+  } as unknown as QBReport;
+
+  it("says how many rows detail_level would add", () => {
+    const out = lines(nested);
+    const notice = out.find(l => l.includes("not shown"));
+    assert.ok(notice, "a two-line summary of 400 transactions must say the detail exists");
+    assert.match(notice!, /400 rows/);
+    assert.match(notice!, /detail_level="full"/);
+  });
+
+  it("says nothing when full detail was asked for", () => {
+    assert.ok(!lines(nested, { detail: "full" }).some(l => l.includes("not shown")));
+  });
+
+  it("says nothing on a flat report, where summary hides nothing", () => {
+    assert.ok(!lines(AGING).some(l => l.includes("not shown")));
+  });
+});
+
+describe("renderGenericReport — the label column", () => {
+  it("gives a label more room than a value cell", () => {
+    // The label is what a reader scans; capping it at VALUE_CAP alongside the
+    // numbers made LABEL_CAP unreachable and cut account names short.
+    const long = "1010 Checking Account At A Bank With A Long Name";
+    const report = {
+      Header: { ReportName: "TrialBalance" },
+      Columns: cols("", "Amount"),
+      Rows: { Row: [data(long, "1.00")] },
+    } as unknown as QBReport;
+    const row = lines(report).find(l => l.includes("1010"))!;
+    assert.ok(row.indexOf("1.00") > 40, `label column is only ${row.indexOf("1.00")} wide`);
+  });
+
+  it("collapses an account path rather than cutting its tail off", () => {
+    const report = {
+      Header: { ReportName: "TrialBalance" },
+      Columns: cols("", "Amount"),
+      Rows: { Row: [data("6000 Operating:6100 Occupancy:6110 Rent:6111 Base Rent", "1.00")] },
+    } as unknown as QBReport;
+    const row = lines(report).find(l => l.includes("6000"))!;
+    assert.match(row, /…/);
+    // The tail distinguishes siblings, so it must survive.
+    assert.match(row, /Base Rent/);
+  });
+});
