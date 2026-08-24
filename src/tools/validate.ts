@@ -52,6 +52,32 @@ function tokens(name: string): string[] {
 }
 
 /**
+ * Closest name by edit distance alone.
+ *
+ * suggestParameter is the wrong ranking for a value drawn from a fixed list.
+ * It puts shared whole words first, which is right for parameter names — `date`
+ * really does mean `txn_date` — but wrong for an enum whose members are
+ * variations on one phrase: against `aged_payable` it prefers
+ * `aged_payable_detail`, which shares two words, over `aged_payables`, which is
+ * a single character away and obviously what was meant.
+ */
+export function suggestClosest(unknown: string, valid: string[]): string | undefined {
+  const lower = unknown.toLowerCase();
+  let best: { name: string; distance: number } | undefined;
+
+  for (const name of valid) {
+    const distance = levenshtein(lower, name.toLowerCase());
+    // Far enough away and a suggestion is noise rather than help.
+    if (distance > Math.max(2, Math.floor(name.length / 2))) continue;
+    if (!best || distance < best.distance || (distance === best.distance && name < best.name)) {
+      best = { name, distance };
+    }
+  }
+
+  return best?.name;
+}
+
+/**
  * Best valid name for a misspelling, or undefined when nothing is close.
  *
  * Edit distance alone is not enough for the misspellings that actually happen

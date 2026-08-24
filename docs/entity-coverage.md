@@ -73,6 +73,14 @@ which reads the General Ledger report. Reports show every posting regardless of
 whether the account appears in the entity JSON — a GL-report-backed drill-down
 is the correct long-term fix for this whole class of gap.
 
+`get_report` widens that escape hatch: 24 further QBO reports, the general
+ledger and journal among them. For the A/R question specifically —
+what is outstanding, and how old is it — `aged_receivables` and
+`aged_receivable_detail` answer directly what no entity query can reach, and
+`customer_balance_detail` breaks it down by customer. The A/P equivalents are
+there too, even though A/P is reachable by entity, because the report already
+does the aging arithmetic.
+
 ## Posting entities in `query_account_transactions`
 
 | Entity | Scanned | Sides extracted |

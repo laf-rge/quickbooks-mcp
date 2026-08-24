@@ -102,19 +102,37 @@ declare module "node-quickbooks" {
     deleteVendorCredit(idOrEntity: object | string, callback: Callback<unknown>): void;
     deleteBillPayment(idOrEntity: object | string, callback: Callback<unknown>): void;
 
-    // Reports
+    // Reports. Every report* method node-quickbooks declares that works on a
+    // US company; get_report dispatches through src/reports/catalog.ts by name,
+    // so an undeclared one would fall to the index signature and lose its type.
+    // Omitted: reportTrialBalanceFR and reportTaxSummary, both HTTP 400 here.
+    reportAccountListDetail(options: object, callback: Callback<unknown>): void;
+    reportAgedPayableDetail(options: object, callback: Callback<unknown>): void;
+    reportAgedPayables(options: object, callback: Callback<unknown>): void;
+    reportAgedReceivableDetail(options: object, callback: Callback<unknown>): void;
+    reportAgedReceivables(options: object, callback: Callback<unknown>): void;
     reportBalanceSheet(options: object, callback: Callback<unknown>): void;
+    reportCashFlow(options: object, callback: Callback<unknown>): void;
+    reportClassSales(options: object, callback: Callback<unknown>): void;
+    reportCustomerBalance(options: object, callback: Callback<unknown>): void;
+    reportCustomerBalanceDetail(options: object, callback: Callback<unknown>): void;
+    reportCustomerIncome(options: object, callback: Callback<unknown>): void;
+    reportCustomerSales(options: object, callback: Callback<unknown>): void;
+    reportDepartmentSales(options: object, callback: Callback<unknown>): void;
+    reportGeneralLedgerDetail(options: object, callback: Callback<unknown>): void;
+    reportInventoryValuationSummary(options: object, callback: Callback<unknown>): void;
+    reportItemSales(options: object, callback: Callback<unknown>): void;
+    reportJournalReport(options: object, callback: Callback<unknown>): void;
     reportProfitAndLoss(options: object, callback: Callback<unknown>): void;
     reportProfitAndLossDetail(options: object, callback: Callback<unknown>): void;
-    reportTrialBalance(options: object, callback: Callback<unknown>): void;
-    reportCashFlow(options: object, callback: Callback<unknown>): void;
-    reportCustomerSales(options: object, callback: Callback<unknown>): void;
-    reportCustomerBalance(options: object, callback: Callback<unknown>): void;
-    reportAgedReceivables(options: object, callback: Callback<unknown>): void;
-    reportAgedPayables(options: object, callback: Callback<unknown>): void;
-    reportVendorBalance(options: object, callback: Callback<unknown>): void;
-    reportGeneralLedgerDetail(options: object, callback: Callback<unknown>): void;
     reportTransactionList(options: object, callback: Callback<unknown>): void;
+    reportTransactionListByCustomer(options: object, callback: Callback<unknown>): void;
+    reportTransactionListByVendor(options: object, callback: Callback<unknown>): void;
+    reportTransactionListWithSplits(options: object, callback: Callback<unknown>): void;
+    reportTrialBalance(options: object, callback: Callback<unknown>): void;
+    reportVendorBalance(options: object, callback: Callback<unknown>): void;
+    reportVendorBalanceDetail(options: object, callback: Callback<unknown>): void;
+    reportVendorExpenses(options: object, callback: Callback<unknown>): void;
   }
 
   export = QuickBooks;
