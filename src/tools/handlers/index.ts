@@ -8,6 +8,7 @@ export {
   handleGetBalanceSheet,
   handleGetTrialBalance,
 } from './reports.js';
+export { handleGetReport } from './report.js';
 export { handleQueryAccountTransactions } from './account-transactions.js';
 export { handleAccountPeriodSummary } from './account-period-summary.js';
 export {

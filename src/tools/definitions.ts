@@ -1,5 +1,9 @@
 // Tool definitions for QuickBooks MCP server
 
+// get_report's enum is the catalog itself, so the advertised list and the
+// dispatch can never drift apart.
+import { REPORT_NAMES } from "../reports/catalog.js";
+
 export const toolDefinitions = [
   {
     name: "qbo_authenticate",
@@ -145,6 +149,72 @@ export const toolDefinitions = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: "get_report",
+    description: "Run a QuickBooks report that has no dedicated tool: A/R and A/P aging, customer and vendor balances, transaction lists, general ledger, journal, sales by customer/item/class/department, cash flow, and detail variants. Answers what is outstanding and how old it is, which the entity query tools cannot — a report sees postings that carry no account reference in entity JSON. Profit and Loss, Balance Sheet and Trial Balance have their own tools.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        report: {
+          type: "string",
+          enum: REPORT_NAMES,
+          description: "QuickBooks' own spelling ('AgedPayables') is accepted too.",
+        },
+        start_date: {
+          type: "string",
+          description: "YYYY-MM-DD. Range reports only.",
+        },
+        end_date: {
+          type: "string",
+          description: "YYYY-MM-DD.",
+        },
+        report_date: {
+          type: "string",
+          description: "YYYY-MM-DD as-of date for the aging, balance and inventory reports; rejected on the rest.",
+        },
+        date_macro: {
+          type: "string",
+          description: "Named period instead of dates, e.g. 'Last Month'.",
+        },
+        accounting_method: {
+          type: "string",
+          enum: ["Accrual", "Cash"],
+          description: "Default Accrual.",
+        },
+        summarize_by: {
+          type: "string",
+          enum: ["Total", "Month", "Week", "Days", "Quarter", "Year", "Customers", "Vendors", "Classes", "Departments", "Employees", "ProductsAndServices"],
+          description: "Column breakdown, where the report supports it.",
+        },
+        department: {
+          type: "string",
+          description: "Department/location name or ID.",
+        },
+        customer: {
+          type: "string",
+          description: "Customer name or ID.",
+        },
+        vendor: {
+          type: "string",
+          description: "Vendor name or ID.",
+        },
+        detail_level: {
+          type: "string",
+          enum: ["summary", "full"],
+          description: "'summary' (default) prints section headers and subtotals; 'full' adds the leaf rows nested under them, which on a detail report is thousands. Top-level rows always print, so a flat report is complete at 'summary'.",
+        },
+        max_rows: {
+          type: "number",
+          description: "Rendered row cap, default 200, max 2000.",
+        },
+        include_raw: {
+          type: "boolean",
+          description: "Append the raw report payload. Off by default; the table already carries the numbers.",
+        },
+      },
+      required: ["report"],
     },
   },
   {

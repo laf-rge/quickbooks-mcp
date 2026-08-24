@@ -5,6 +5,7 @@ import { toolDefinitions } from "../../src/tools/definitions.js";
 import {
   validateToolArguments,
   suggestParameter,
+  suggestClosest,
   ToolArgumentError,
   type ToolSchema,
 } from "../../src/tools/validate.js";
@@ -199,5 +200,29 @@ describe("suggestParameter", () => {
   it("is deterministic when candidates tie", () => {
     const valid = ["alpha_date", "beta_date"];
     assert.equal(suggestParameter("date", valid), suggestParameter("date", [...valid].reverse()));
+  });
+});
+
+describe("suggestClosest", () => {
+  const REPORTS = ["aged_payables", "aged_payable_detail", "aged_receivables", "general_ledger"];
+
+  it("prefers the near-miss over the longer name that shares more words", () => {
+    // The reason this exists alongside suggestParameter: token-first ranking
+    // answers "aged_payable_detail" here, which is not what was meant.
+    assert.equal(suggestClosest("aged_payable", REPORTS), "aged_payables");
+    assert.equal(suggestParameter("aged_payable", REPORTS), "aged_payable_detail");
+  });
+
+  it("finds a plain typo", () => {
+    assert.equal(suggestClosest("generl_ledger", REPORTS), "general_ledger");
+  });
+
+  it("stays quiet when nothing is close", () => {
+    assert.equal(suggestClosest("payroll_summary", REPORTS), undefined);
+  });
+
+  it("is deterministic when candidates tie", () => {
+    const valid = ["aaa_x", "aaa_y"];
+    assert.equal(suggestClosest("aaa_z", valid), suggestClosest("aaa_z", [...valid].reverse()));
   });
 });
