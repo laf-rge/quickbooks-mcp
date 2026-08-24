@@ -20,8 +20,39 @@ const remoteToolDefinitions = toolDefinitions.filter(
   (t) => t.name !== "qbo_authenticate"
 );
 
-// Load auth config once at module level (cached across warm invocations)
+// Load auth config once at module level (cached across warm invocations).
+// Null when MCP_AUTH_JWKS_URI / MCP_AUTH_AUDIENCE / MCP_AUTH_ISSUER are not all
+// set, which disables auth entirely — intended only for local testing.
 const authConfig = getAuthConfig();
+
+// FAIL CLOSED IN LAMBDA.
+//
+// getAuthConfig() returns null when the three required MCP_AUTH_* vars are not
+// all present, and null means every auth check below is skipped. That is fine
+// locally, but in a deployed Lambda it would mean a single typo'd or dropped
+// Terraform env var silently publishes this endpoint — and full read/write
+// access to the accounting data behind it — unauthenticated to the internet,
+// answering 200 with no signal that anything is wrong. A partial config is the
+// dangerous case: two of three vars set still yields null.
+//
+// AWS sets AWS_LAMBDA_FUNCTION_NAME only inside the Lambda runtime, so we use
+// it to require auth exactly where it matters, with no new config to forget.
+// Set MCP_AUTH_ALLOW_ANONYMOUS=true to deliberately opt out; nothing sets it
+// today, and nothing should without a specific reason.
+const IN_LAMBDA = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+const ALLOW_ANONYMOUS = process.env.MCP_AUTH_ALLOW_ANONYMOUS === "true";
+const AUTH_MISCONFIGURED = IN_LAMBDA && !authConfig && !ALLOW_ANONYMOUS;
+
+if (AUTH_MISCONFIGURED) {
+  // Logged once per cold start so the cause is visible in CloudWatch rather
+  // than being inferred from a wall of 503s.
+  console.error(
+    "FATAL: running in Lambda with no auth configured. " +
+      "MCP_AUTH_JWKS_URI, MCP_AUTH_AUDIENCE and MCP_AUTH_ISSUER must all be set. " +
+      "Refusing all requests. Set MCP_AUTH_ALLOW_ANONYMOUS=true only if you " +
+      "genuinely intend an unauthenticated endpoint."
+  );
+}
 
 // Azure AD OAuth endpoints (derived from MCP_AUTH_SERVER_URL)
 const AUTH_SERVER_URL = process.env.MCP_AUTH_SERVER_URL || "";
@@ -311,6 +342,24 @@ export async function handler(event: APIGatewayEvent): Promise<APIGatewayResult>
   // {"warmer": true}) so they don't exercise auth or QB API code paths.
   if ((event as unknown as { warmer?: boolean }).warmer === true) {
     return { statusCode: 200, headers: {}, body: "warmer", isBase64Encoded: false };
+  }
+
+  // Refuse everything if we are deployed without auth configured. Checked
+  // before any QuickBooks data path, credential fetch or transport setup:
+  // serving the books unauthenticated because of a config typo is a far worse
+  // outcome than being down. Warmer pings above are exempt so a
+  // misconfiguration does not also look like a dead container.
+  if (AUTH_MISCONFIGURED) {
+    return {
+      statusCode: 503,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        error: "server_misconfigured",
+        error_description:
+          "Authentication is not configured; refusing requests. See CloudWatch logs.",
+      }),
+      isBase64Encoded: false,
+    };
   }
 
   const { method, path } = getMethodAndPath(event);
