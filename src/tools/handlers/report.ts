@@ -8,7 +8,7 @@ import {
   resolveVendor,
   withRetry,
 } from "../../client/index.js";
-import { outputReport } from "../../utils/index.js";
+import { isHttpMode, outputReport } from "../../utils/index.js";
 import {
   DEFAULT_MAX_ROWS,
   REPORT_CATALOG,
@@ -157,6 +157,13 @@ export async function handleGetReport(
     label: spec.label,
     detail: detail,
     maxRows,
+    // stdio writes the whole payload to the file named beneath the summary, so
+    // the withheld rows are already there. Over HTTP they exist only if
+    // include_raw asked for them, and pointing a remote caller at a payload it
+    // was not sent is the dead end the cap is meant to avoid.
+    overflowHint: isHttpMode()
+      ? "Raise max_rows, narrow the date range, or set include_raw to receive the full payload."
+      : "Raise max_rows or narrow the date range; the full report is in the file below.",
   });
 
   return outputReport(`report-${key}`, result, summary, { includeRaw: include_raw });

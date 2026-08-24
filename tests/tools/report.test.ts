@@ -250,3 +250,38 @@ describe("handleGetReport — response size", () => {
     assert.equal(raw.content.length, 2);
   });
 });
+
+describe("handleGetReport — where the withheld rows actually are", () => {
+  const wide = {
+    Header: { ReportName: "TransactionList" },
+    Columns: { Column: [{ ColTitle: "" }, { ColTitle: "Amount" }] },
+    Rows: { Row: Array.from({ length: 500 }, (_, i) => ({ ColData: [{ value: `Row ${i}` }, { value: "1.00" }] })) },
+  };
+
+  function bigClient(): QuickBooks {
+    return {
+      reportTransactionList: (_o: object, cb: Callback<unknown>) => cb(null, wide),
+    } as unknown as QuickBooks;
+  }
+
+  it("sends an HTTP caller to include_raw, not to a file it will never see", async () => {
+    setOutputMode("http");
+    const text = (await handleGetReport(bigClient(), { report: "transaction_list" })).content[0].text;
+    const notice = text.split("\n").find(l => l.startsWith("Showing "))!;
+    assert.match(notice, /include_raw/);
+    assert.doesNotMatch(notice, /file/);
+  });
+
+  it("sends a stdio caller to the file that is already written", async () => {
+    setOutputMode("stdio");
+    try {
+      const text = (await handleGetReport(bigClient(), { report: "transaction_list" })).content[0].text;
+      const notice = text.split("\n").find(l => l.startsWith("Showing "))!;
+      assert.match(notice, /file below/);
+      // And the file it names is really there.
+      assert.match(text, /Full data: \//);
+    } finally {
+      setOutputMode("http");
+    }
+  });
+});

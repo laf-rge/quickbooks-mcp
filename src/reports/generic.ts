@@ -58,6 +58,13 @@ export interface GenericReportOptions {
    */
   detail?: "summary" | "full";
   maxRows?: number;
+  /**
+   * How the caller reaches the rows the table left out. Transport-dependent:
+   * in stdio the whole payload is on disk beside the summary, over HTTP it is
+   * only there if it was asked for. Naming a route that does not exist in the
+   * current mode is the dead end a cap is supposed to avoid.
+   */
+  overflowHint?: string;
 }
 
 interface TableRow {
@@ -218,7 +225,12 @@ export function renderGenericReport(
   report: QBReport,
   options: GenericReportOptions = {}
 ): string {
-  const { label, detail = "summary", maxRows = DEFAULT_MAX_ROWS } = options;
+  const {
+    label,
+    detail = "summary",
+    maxRows = DEFAULT_MAX_ROWS,
+    overflowHint = "Raise max_rows or narrow the date range.",
+  } = options;
   const header = report.Header ?? {};
   const lines: string[] = [];
 
@@ -247,10 +259,7 @@ export function renderGenericReport(
 
   if (shown < rows.length) {
     lines.push("");
-    lines.push(
-      `Showing ${shown} of ${rows.length} rows. Raise max_rows, narrow the ` +
-        `date range, or read the full report from the payload.`
-    );
+    lines.push(`Showing ${shown} of ${rows.length} rows. ${overflowHint}`);
   }
 
   // Rows dropped by 'summary' never reach the count above, so without this the
