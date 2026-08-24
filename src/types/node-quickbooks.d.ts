@@ -60,6 +60,8 @@ declare module "node-quickbooks" {
     findEstimates(criteria: object | string, callback: Callback<unknown>): void;
     findCreditmemos(criteria: object | string, callback: Callback<unknown>): void;
     findTransfers(criteria: object | string, callback: Callback<unknown>): void;
+    createTransfer(transfer: object, callback: Callback<unknown>): void;
+    getTransfer(id: string, callback: Callback<unknown>): void;
     findClasses(criteria: object | string, callback: Callback<unknown>): void;
     findTaxAgencies(criteria: object | string, callback: Callback<unknown>): void;
     findCompanyInfos(criteria: object | string, callback: Callback<unknown>): void;

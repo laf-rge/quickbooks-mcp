@@ -1659,6 +1659,40 @@ export const toolDefinitions = [
     },
   },
   {
+    name: "create_transfer",
+    description: "Move money between two of the company's own accounts (QuickBooks 'Transfer') — bank to bank, or a credit-card paydown. Use this rather than create_expense, which would book the outflow as an expense and never touch the receiving account, or create_journal_entry, which posts the right result but does not read as a transfer in the register or the bank-feed match screen. Defaults to draft: true for a preview.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from_account: {
+          type: "string",
+          description: "Account the money leaves. Bank or Credit Card only — name, number, or ID.",
+        },
+        to_account: {
+          type: "string",
+          description: "Account the money arrives in. Bank or Credit Card only — name, number, or ID.",
+        },
+        amount: {
+          type: "number",
+          description: "Amount to move. Must be positive; reverse the accounts rather than passing a negative.",
+        },
+        txn_date: {
+          type: "string",
+          description: "Transfer date, YYYY-MM-DD.",
+        },
+        private_note: {
+          type: "string",
+          description: "Private note on the transfer.",
+        },
+        draft: {
+          type: "boolean",
+          description: "Preview without recording. Default true.",
+        },
+      },
+      required: ["from_account", "to_account", "amount", "txn_date"],
+    },
+  },
+  {
     name: "receive_payment",
     description: "Record a customer payment against one or more open invoices (QuickBooks 'Receive Payment'), clearing Accounts Receivable. This is the A/R counterpart to create_bill_payment. Not a deposit — create_deposit banks money without settling an invoice — and not a sales receipt, which records a sale that was paid outright and never had an invoice. Defaults to draft: true for a preview.",
     inputSchema: {
