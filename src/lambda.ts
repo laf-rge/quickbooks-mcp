@@ -20,6 +20,14 @@ const remoteToolDefinitions = toolDefinitions.filter(
   (t) => t.name !== "qbo_authenticate"
 );
 
+// The advertised list and the callable list must not diverge. Filtering
+// tools/list only changes what a caller is *told* about; the tools/call handler
+// below dispatches by name, so without this check a caller past the auth gate
+// could still invoke a tool that was deliberately withheld here. Derived from
+// remoteToolDefinitions rather than written out as a denylist, so anything
+// filtered above is automatically unreachable too.
+export const remoteToolNames = new Set(remoteToolDefinitions.map((t) => t.name));
+
 // Load auth config once at module level (cached across warm invocations).
 // Null when MCP_AUTH_JWKS_URI / MCP_AUTH_AUDIENCE / MCP_AUTH_ISSUER are not all
 // set, which disables auth entirely — intended only for local testing.
@@ -76,6 +84,15 @@ function createServer(): Server {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    if (!remoteToolNames.has(name)) {
+      // Same wording executeTool uses for a name it has no handler for: over
+      // this transport the tool simply does not exist, and saying anything more
+      // specific would confirm that it does elsewhere.
+      return {
+        content: [{ type: "text", text: `Unknown tool: ${name}` }],
+        isError: true,
+      };
+    }
     return executeTool(name, args as Record<string, unknown>);
   });
 
