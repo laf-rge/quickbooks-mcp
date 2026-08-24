@@ -11,6 +11,7 @@ import { toCents, sumCents, toDollars, outputReport, isHttpMode, mapWithConcurre
 import { PaginationParams } from "../../types/index.js";
 import { paginatedQuery, fetcherForEntity, extractAccountLines } from "../../query/index.js";
 import { TransactionLine } from "../../types/index.js";
+import { crossCheckAgainstGL, renderCrossCheck } from '../../query/gl-crosscheck.js';
 
 // Default window size in HTTP mode, in transactions. HTTP has no filesystem, so
 // the detail goes straight into the model's context and must be bounded; stdio
@@ -385,6 +386,33 @@ export async function handleQueryAccountTransactions(
       'QBO entity JSON and cannot appear here. Use account_period_summary, which reads ' +
       'the General Ledger report, for a complete figure.'
     );
+  }
+
+  // The generic version of that warning. The A/R note above names one cause; the
+  // ledger knows about all of them, including the ones nobody has found yet.
+  //
+  // A failure here must not take down a drill-down that otherwise succeeded, so
+  // it is reported and stepped over — the same bargain get_trial_balance makes
+  // with its flag pass.
+  try {
+    const check = await crossCheckAgainstGL(client, {
+      accountId: resolvedAccount.Id,
+      classification: resolvedAccount.Classification,
+      startDate: startDateResolved,
+      endDate: endDateResolved,
+      departmentId: resolvedDepartmentId,
+      comparable: subAccountIds.length === 0 || include_subaccounts,
+      drill: {
+        // Lines, because that is what a General Ledger row is.
+        postingCount: matchingLines.length,
+        totalDebits,
+        totalCredits,
+      },
+    });
+    summaryLines.push(...renderCrossCheck(check, formatCurrency));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    summaryLines.push('', `Ledger cross-check unavailable: ${reason}`);
   }
 
   // Preview the returned window, not the full set — otherwise every page of a
