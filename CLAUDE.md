@@ -94,7 +94,7 @@ Every new tool requires changes in **4 files** plus README:
 
 1. **`src/tools/handlers/<name>.ts`** — Create handler function
 2. **`src/tools/handlers/index.ts`** — Add barrel export
-3. **`src/tools/definitions.ts`** — Add tool schema (name, description, inputSchema)
+3. **`src/tools/definitions.ts`** — Add tool schema (name, description, inputSchema, and `annotations`: a `title` plus one of the `READ`/`CREATE`/`EDIT`/`EDIT_LINES`/`DELETE` hint sets defined above the array; `tests/tools/annotations.test.ts` fails without them)
 4. **`src/tools/index.ts`** — Import handler + register in `toolHandlers.set()`
 5. **`README.md`** — Add row to Available Tools table
 

@@ -208,6 +208,20 @@ describe("remote tool allow-list", () => {
     assert.ok(!advertised.has("qbo_authenticate"));
   });
 
+  it("carries each tool's annotations through tools/list", async () => {
+    const { handler } = await loadLambda();
+
+    const listed = (await rpc(handler, { method: "tools/list" })) as {
+      tools: Array<{ name: string; annotations?: Record<string, unknown> }>;
+    };
+    assert.ok(listed.tools.length > 0);
+    for (const t of listed.tools) {
+      const defined = toolDefinitions.find((d) => d.name === t.name) as { annotations?: unknown };
+      assert.ok(t.annotations, `${t.name} has no annotations on the wire`);
+      assert.deepEqual(t.annotations, defined.annotations, t.name);
+    }
+  });
+
   it("blocks every tool held back from the advertised list", async () => {
     const { handler, remoteToolNames } = await loadLambda();
 
